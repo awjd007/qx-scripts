@@ -1,15 +1,11 @@
-#!name=Lovekey 键盘 1.8.5 修复版
-#!desc=适配 Lovekey iOS 1.8.5+；修复账号会员字段与聊天鉴权。脚本自包含（内联 CryptoJS，无 CDN 依赖）
-#!author=xiadasy (port: awjd007)
+#!name=Lovekey 键盘修复版
+#!desc=适配 Lovekey iOS；修复账号会员字段与聊天鉴权。脚本自包含（内联 CryptoJS，无 eval）
+#!author=xiadasy / awjd007
 #!homepage=https://github.com/awjd007/qx-scripts
-#!category=Lovekey
 
 [Script]
-# 聊天 / 开场白 / 超级对话：把请求头替换为可用访客鉴权
-Lovekey Chat = type=http-request, pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/v1\/chat\/(?:keyboard-(?:ow|stream)-msg|stream_super_msg), script-path=https://cdn.jsdelivr.net/gh/awjd007/qx-scripts@main/lovekey/lovekey_standalone.js, requires-body=false, timeout=30
-
-# 账号信息：解密响应并修复会员字段后重新加密
-Lovekey Account = type=http-response, pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/v2\/account, script-path=https://cdn.jsdelivr.net/gh/awjd007/qx-scripts@main/lovekey/lovekey_standalone.js, requires-body=true, timeout=30, max-size=131072
+Lovekey-Chat=type=http-request,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/v1\/chat\/(?:keyboard-(?:ow|stream)-msg|stream_super_msg),requires-body=0,script-path=https://cdn.jsdelivr.net/gh/awjd007/qx-scripts@main/lovekey/lovekey_standalone.js,script-update-interval=0
+Lovekey-Account=type=http-response,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/v2\/account,requires-body=1,max-size=0,script-path=https://cdn.jsdelivr.net/gh/awjd007/qx-scripts@main/lovekey/lovekey_standalone.js,script-update-interval=0
 
 [MITM]
 hostname = %APPEND% sea.api.lovekeyboard.com
