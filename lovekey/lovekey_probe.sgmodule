@@ -1,0 +1,11 @@
+#!name=Lovekey 诊断版
+#!desc=诊断模块：记录 Lovekey 全部 API 请求，并解锁会员。确认可用后可换回正式版
+#!author=awjd007
+#!homepage=https://github.com/awjd007/qx-scripts
+
+[Script]
+Lovekey-Probe=type=http-request,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/,requires-body=0,script-path=https://cdn.jsdelivr.net/gh/awjd007/qx-scripts@main/lovekey/lovekey_probe.js,script-update-interval=0
+Lovekey-Account=type=http-response,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/v\d\/account,requires-body=1,max-size=0,script-path=https://cdn.jsdelivr.net/gh/awjd007/qx-scripts@main/lovekey/lovekey_probe.js,script-update-interval=0
+
+[MITM]
+hostname = %APPEND% sea.api.lovekeyboard.com
