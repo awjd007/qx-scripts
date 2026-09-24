@@ -1,0 +1,10 @@
+#!name=Lovekey MITM 测试
+#!desc=仅用于验证 MITM 与模块脚本是否生效。安装后打开 Lovekey，若收到通知说明链路正常
+#!author=awjd007
+#!homepage=https://github.com/awjd007/qx-scripts
+
+[Script]
+Lovekey-Test=type=http-request,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/,requires-body=0,script-path=https://cdn.jsdelivr.net/gh/awjd007/qx-scripts@main/lovekey/lovekey_test.js,script-update-interval=0
+
+[MITM]
+hostname = %APPEND% sea.api.lovekeyboard.com
