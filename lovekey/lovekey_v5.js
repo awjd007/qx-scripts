@@ -206,26 +206,21 @@ async function accountResponse() {
 }
 
 
-// 一次性诊断：抓 chs-stream-msg 的完整请求（超会说的真实鉴权方式）
+// 一次性诊断：抓 chs-stream-msg 的完整请求头（超会说的真实鉴权方式）
 function chsProbe() {
   try {
-    if (read("Lovekey_ChsProbe") === "1") return $done({});
-    write("Lovekey_ChsProbe", "1");
+    if (read("Lovekey_ChsProbeV5") === "1") return $done({});
+    write("Lovekey_ChsProbeV5", "1");
+    const url = ($request && $request.url) || "";
     const hs = ($request && $request.headers) || {};
-    const pick = ["authorization", "Authorization", "sign", "timestamp", "device-identifier",
-                  "device-uuid", "identifier", "install-id", "token", "app-version", "channel"];
-    const lines = [];
-    for (const k of Object.keys(hs)) {
-      if (pick.some(p => p.toLowerCase() === k.toLowerCase())) {
-        lines.push(k + "=" + String(hs[k]).slice(0, 48));
-      }
-    }
-    const body = String(($request && $request.body) || "").slice(0, 300);
+    const all = Object.keys(hs).map(function (k) { return k + "=" + String(hs[k]).slice(0, 46); });
+    const authy = all.filter(function (x) { return /auth|token|sign|device|identifier|timestamp|install|uuid|key|secret|channel|version/i.test(x); });
+    const rest = all.filter(function (x) { return authy.indexOf(x) === -1; });
+    const out = authy.concat(rest).join(" | ");
     if (typeof $notify !== "undefined") {
-      $notify("Lovekey 超会说·请求头", "共 " + lines.length + " 个关键头", lines.join(" | ").slice(0, 480) || "(无)");
-      $notify("Lovekey 超会说·请求体", "body " + body.length + " 字符", body || "(空)");
+      $notify("Lovekey 超会说·请求头", "共 " + all.length + " 个头", out.slice(0, 460) || "(无)");
     }
-    try { console.log("[Lovekey] chs headers: " + lines.join(" | ") + " || body: " + body); } catch (_) {}
+    try { console.log("[Lovekey] chs req " + url + " || " + out); } catch (_) {}
   } catch (_) {}
   $done({});
 }
