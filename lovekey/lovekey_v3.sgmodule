@@ -1,0 +1,11 @@
+#!name=Lovekey 修复版 v3
+#!desc=适配 Lovekey 1.9.0：账号 v1/v2 双写、拦截键盘扩展接口(chs-stream-msg)、清零已用次数
+#!author=awjd007
+#!homepage=https://github.com/awjd007/qx-scripts
+
+[Script]
+Lovekey-Req=type=http-request,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/(?:v1\/chat\/(?:keyboard-(?:ow|stream)-msg|stream_super_msg)|v1\/device\/chs-stream-msg),requires-body=0,script-path=https://cdn.jsdelivr.net/gh/awjd007/qx-scripts@main/lovekey/lovekey_v3.js,script-update-interval=0
+Lovekey-Resp=type=http-response,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/(?:v[12]\/account(?:\?|$)|v1\/device\/account\/vip2),requires-body=1,max-size=131072,script-path=https://cdn.jsdelivr.net/gh/awjd007/qx-scripts@main/lovekey/lovekey_v3.js,script-update-interval=0
+
+[MITM]
+hostname = %APPEND% sea.api.lovekeyboard.com
