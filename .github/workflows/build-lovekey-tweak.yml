@@ -76,4 +76,22 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -f dist/lovekey-tweak
           git commit -m "ci: publish lovekey-tweak builds [skip ci]" || true
+          git pull --rebase origin main || true
           git push || true
+
+      - name: Publish release
+        if: always()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: tweak-latest
+          name: LovekeyTweak latest
+          body: |
+            自动构建产物。
+            - `LovekeyTweak.dylib` → TrollFools 注入用
+            - `*.deb` → 越狱安装
+          files: |
+            /tmp/dylib-out/*.dylib
+            lovekey-tweak/packages/*.deb
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
