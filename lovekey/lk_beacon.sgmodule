@@ -1,0 +1,10 @@
+#!name=Lovekey 信标（判定脚本是否执行）
+#!desc=仅弹通知，不改写流量。用于区分「脚本没下载」还是「脚本下载了但没执行」
+#!author=awjd007
+#!homepage=https://github.com/awjd007/qx-scripts
+
+[Script]
+LkBeacon = type=http-request,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/,requires-body=0,script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@b37090c/lovekey/lk_beacon.js,script-update-interval=0
+
+[MITM]
+hostname = %APPEND% sea.api.lovekeyboard.com
