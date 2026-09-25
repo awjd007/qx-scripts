@@ -1,6 +1,7 @@
 #import "LKLog.h"
 #import <os/log.h>
 #import <os/lock.h>
+#import <objc/runtime.h>
 #import <unistd.h>
 #import <sys/stat.h>
 

@@ -23,11 +23,14 @@ jobs:
         run: |
           set -x
           cd lovekey-tweak
-          make clean || true
-          make package FINALPACKAGE=1 || true
-          # 留存默认方案的 dylib，便于 TrollFools 直接注入
+          # 默认方案必须编译成功，失败即中断（不再用 || true 吞错误）
+          make clean
+          make package FINALPACKAGE=1
           mkdir -p /tmp/dylib-out
-          find .theos -name '*.dylib' -exec cp {} /tmp/dylib-out/ \; || true
+          find .theos -name '*.dylib' -exec cp {} /tmp/dylib-out/ \;
+          echo "--- dylib-out ---"
+          ls -la /tmp/dylib-out/
+          # 可选方案允许失败
           make clean || true
           make package SCHEME=rootless FINALPACKAGE=1 || true
           make clean || true
@@ -35,18 +38,24 @@ jobs:
           echo "--- packages ---"
           ls -la packages/ || true
 
-      - name: Verify dylib dependencies
-        if: always()
+      - name: Verify build content
         run: |
-          echo "=== 依赖列表（关键：不能出现 substrate）==="
-          for f in /tmp/dylib-out/*.dylib; do
-            echo "--- $f ---"
-            otool -L "$f" || true
-            otool -l "$f" | grep -A4 LC_BUILD_VERSION || true
+          DY=$(ls /tmp/dylib-out/*.dylib | head -1)
+          echo "检查 $DY"
+          ls -la "$DY"
+          # 确认新代码真的编进去了
+          for s in "protocolClasses 挂钩成功" "LovekeyTweak 启动"; do
+            if strings "$DY" | grep -q "$s"; then
+              echo "OK: 找到 [$s]"
+            else
+              echo "::error::dylib 缺少日志字符串 [$s]，编译产物是旧的"
+              exit 1
+            fi
           done
-          # 硬性校验：出现 substrate/libhooker 即视为 TrollFools 不兼容
-          if otool -L /tmp/dylib-out/*.dylib 2>/dev/null | grep -qiE 'substrate|libhooker|ellekit'; then
-            echo "::error::dylib 仍依赖 hook 运行时，TrollFools 环境会加载失败"
+          echo "=== 依赖列表 ==="
+          otool -L "$DY"
+          if otool -L "$DY" | grep -qiE 'substrate|libhooker|ellekit'; then
+            echo "::error::dylib 依赖 hook 运行时，TrollFools 会加载失败"
             exit 1
           fi
           echo "依赖检查通过：无 hook 运行时依赖"
