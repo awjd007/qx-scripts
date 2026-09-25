@@ -4,8 +4,8 @@
 #!homepage=https://github.com/awjd007/qx-scripts
 
 [Script]
-Lovekey-Req=type=http-request,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/v1\/chat\/(?:keyboard-(?:ow|stream)-msg|stream_super_msg),requires-body=0,script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@main/lovekey/lovekey_patch.js,script-update-interval=0
-Lovekey-Resp=type=http-response,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/(?:v[12]\/account(?:\?|$)|v[12]\/app\/config),requires-body=1,max-size=262144,script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@main/lovekey/lovekey_patch.js,script-update-interval=0
+Lovekey-Req=type=http-request,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/v1\/chat\/(?:keyboard-(?:ow|stream)-msg|stream_super_msg),requires-body=0,script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@464c3c1a634ccc99598c0877dd3ead4ef06cf8db/lovekey/lovekey_patch.js,script-update-interval=0
+Lovekey-Resp=type=http-response,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/(?:v[12]\/account(?:\?|$)|v[12]\/app\/config),requires-body=1,max-size=262144,script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@464c3c1a634ccc99598c0877dd3ead4ef06cf8db/lovekey/lovekey_patch.js,script-update-interval=0
 
 [MITM]
 hostname = %APPEND% sea.api.lovekeyboard.com
