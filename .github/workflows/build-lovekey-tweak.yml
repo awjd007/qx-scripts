@@ -17,27 +17,28 @@ jobs:
       - name: Setup Theos
         uses: Randomblock1/theos-action@v1
 
-      - name: Build package
+      - name: Build packages
         run: |
+          set -x
           cd lovekey-tweak
           make clean || true
-          make package FINALPACKAGE=1
-
-      - name: Build rootless package
-        run: |
-          cd lovekey-tweak
+          make package FINALPACKAGE=1 || true
+          # 留存默认方案的 dylib，便于手工注入 / 打包 ipa
+          mkdir -p /tmp/dylib-out
+          find .theos -name '*.dylib' -exec cp {} /tmp/dylib-out/ \; || true
           make clean || true
-          make package SCHEME=rootless FINALPACKAGE=1
-
-      - name: Build roothide package
-        run: |
-          cd lovekey-tweak
+          make package SCHEME=rootless FINALPACKAGE=1 || true
           make clean || true
-          make package SCHEME=roothide FINALPACKAGE=1
+          make package SCHEME=roothide FINALPACKAGE=1 || true
+          echo "--- packages ---"
+          ls -la packages/ || true
 
       - name: Upload artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: LovekeyTweak-debs
-          path: lovekey-tweak/packages/*.deb
+          name: LovekeyTweak
+          path: |
+            lovekey-tweak/packages/*.deb
+            /tmp/dylib-out/*.dylib
           if-no-files-found: warn
