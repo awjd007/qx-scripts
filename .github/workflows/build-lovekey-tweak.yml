@@ -19,6 +19,11 @@ jobs:
       - name: Setup Theos
         uses: Randomblock1/theos-action@v1
 
+      - name: Clone roothide theos
+        run: |
+          git clone --depth 1 --recursive https://github.com/roothide/theos.git "$HOME/theos-rh" || true
+          ls "$HOME/theos-rh" | head
+
       - name: Build packages
         run: |
           set -x
@@ -33,10 +38,30 @@ jobs:
           # 可选方案允许失败
           make clean || true
           make package SCHEME=rootless FINALPACKAGE=1 || true
-          make clean || true
-          make package SCHEME=roothide FINALPACKAGE=1 || true
           echo "--- packages ---"
           ls -la packages/ || true
+
+      - name: Build roothide package (Bootstrap)
+        continue-on-error: true
+        run: |
+          set -x
+          cd lovekey-tweak
+          export THEOS="$HOME/theos-rh"
+          rm -rf packages .theos            # 清干净，避免与 rootless 产物同名混淆
+          make clean
+          make package THEOS_PACKAGE_SCHEME=roothide FINALPACKAGE=1 2>&1 | tail -40
+          ls -la packages/ || true
+          mkdir -p /tmp/roothide-out
+          for f in packages/*.deb; do
+            [ -f "$f" ] || continue
+            echo "roothide deb: $f"
+            cp "$f" /tmp/roothide-out/
+          done
+          ls -la /tmp/roothide-out/ || true
+          # 校验 roothide 特征：包内应出现 .jbroot 相关处理
+          if command -v dpkg-deb >/dev/null 2>&1; then
+            dpkg-deb -c /tmp/roothide-out/*.deb 2>/dev/null | head -20 || true
+          fi
 
       - name: Verify build content
         run: |
@@ -68,6 +93,8 @@ jobs:
           path: |
             lovekey-tweak/packages/*.deb
             /tmp/dylib-out/*.dylib
+            /tmp/roothide-out/*.deb
+            lovekey-tweak/LovekeyTweak.plist
           if-no-files-found: warn
 
       - name: Publish debs to dist
@@ -76,6 +103,8 @@ jobs:
           mkdir -p dist/lovekey-tweak
           cp lovekey-tweak/packages/*.deb dist/lovekey-tweak/ 2>/dev/null || true
           cp /tmp/dylib-out/*.dylib dist/lovekey-tweak/ 2>/dev/null || true
+          cp /tmp/roothide-out/*.deb dist/lovekey-tweak/ 2>/dev/null || true
+          cp lovekey-tweak/LovekeyTweak.plist dist/lovekey-tweak/ 2>/dev/null || true
           ls -la dist/lovekey-tweak/ || true
 
       - name: Commit dist
@@ -101,6 +130,8 @@ jobs:
           files: |
             /tmp/dylib-out/*.dylib
             lovekey-tweak/packages/*.deb
+            /tmp/roothide-out/*.deb
+            lovekey-tweak/LovekeyTweak.plist
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
