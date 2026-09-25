@@ -1,5 +1,6 @@
 TARGET = iphone:clang:latest:14.0
 ARCHS = arm64 arm64e
+DEBUG = 0
 
 # 打包方案必须在 include 之前 export，否则 layout 不生效
 ifeq ($(SCHEME),rootless)
@@ -14,9 +15,13 @@ endif
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = LovekeyTweak
-LovekeyTweak_FILES = Tweak.x LKCrypto.m LKAccount.m LKURLProtocol.m
-LovekeyTweak_CFLAGS = -fobjc-arc -w
-LovekeyTweak_FRAMEWORKS = Foundation UIKit
+LovekeyTweak_FILES = Tweak.m LKLog.m LKCrypto.m LKAccount.m LKURLProtocol.m
+LovekeyTweak_CFLAGS = -fobjc-arc -w -O2
+LovekeyTweak_FRAMEWORKS = Foundation
+# 关键：纯 runtime 实现，不依赖 substrate。
+# -dead_strip_dylibs 剔除未使用的 dylib 依赖，保证 TrollFools 环境能加载。
+LovekeyTweak_LDFLAGS = -Wl,-dead_strip_dylibs
+LovekeyTweak_LIBRARIES =
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 

@@ -25,7 +25,7 @@ jobs:
           cd lovekey-tweak
           make clean || true
           make package FINALPACKAGE=1 || true
-          # 留存默认方案的 dylib，便于手工注入 / 打包 ipa
+          # 留存默认方案的 dylib，便于 TrollFools 直接注入
           mkdir -p /tmp/dylib-out
           find .theos -name '*.dylib' -exec cp {} /tmp/dylib-out/ \; || true
           make clean || true
@@ -34,6 +34,22 @@ jobs:
           make package SCHEME=roothide FINALPACKAGE=1 || true
           echo "--- packages ---"
           ls -la packages/ || true
+
+      - name: Verify dylib dependencies
+        if: always()
+        run: |
+          echo "=== 依赖列表（关键：不能出现 substrate）==="
+          for f in /tmp/dylib-out/*.dylib; do
+            echo "--- $f ---"
+            otool -L "$f" || true
+            otool -l "$f" | grep -A4 LC_BUILD_VERSION || true
+          done
+          # 硬性校验：出现 substrate/libhooker 即视为 TrollFools 不兼容
+          if otool -L /tmp/dylib-out/*.dylib 2>/dev/null | grep -qiE 'substrate|libhooker|ellekit'; then
+            echo "::error::dylib 仍依赖 hook 运行时，TrollFools 环境会加载失败"
+            exit 1
+          fi
+          echo "依赖检查通过：无 hook 运行时依赖"
 
       - name: Upload artifacts
         if: always()

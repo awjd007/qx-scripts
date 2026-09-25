@@ -1,5 +1,6 @@
 #import "LKAccount.h"
 #import "LKCrypto.h"
+#import "LKLog.h"
 
 static NSString *const kAESKey      = @"d4XvusEYeafO9SBK";
 static NSString *const kSignSecret  = @"BeJsdgiq1azlQItxc93W";
@@ -99,17 +100,31 @@ static NSString *const kGuestURL    = @"https://sea.api.lovekeyboard.com/v2/auth
     NSURLSessionConfiguration *cfg = [NSURLSessionConfiguration ephemeralSessionConfiguration];
     cfg.protocolClasses = @[];   // 避免再次进入 LKURLProtocol
     NSURLSession *session = [NSURLSession sessionWithConfiguration:cfg];
+    LKLog(@"[注册] 发起 guest 注册 model=%@ installId=%@", model, installId);
+    LKLog(@"[注册] sign=%@", sign);
     NSURLSessionDataTask *task = [session dataTaskWithRequest:req
         completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
+            NSInteger code = [resp isKindOfClass:[NSHTTPURLResponse class]]
+                             ? ((NSHTTPURLResponse *)resp).statusCode : -1;
             NSString *token = nil;
-            if (!err && data.length) {
+            if (err) {
+                LKLog(@"[注册] !! 网络错误 status=%ld err=%@", (long)code, err.localizedDescription);
+            } else {
+                NSString *bodyStr = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+                LKLog(@"[注册] status=%ld bytes=%lu", (long)code, (unsigned long)data.length);
+                LKLog(@"[注册] 响应体前 300 字 = %@",
+                      bodyStr.length > 300 ? [bodyStr substringToIndex:300] : (bodyStr ?: @"(空)"));
                 id obj = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
                 if ([obj isKindOfClass:[NSDictionary class]]) {
+                    LKLog(@"[注册] 外层 code=%@ msg=%@", obj[@"code"] ?: @"-", obj[@"message"] ?: @"-");
                     id wrapped = obj[@"data"];
                     if ([wrapped isKindOfClass:[NSString class]]) {
                         // 脚本逻辑：先 AES 解密外层 data，再取 access_token
                         NSString *plain = [LKCrypto aesDecrypt:wrapped key:kAESKey];
+                        LKLog(@"[注册] AES 解密 %@ (长度=%lu)", plain ? @"成功" : @"失败", (unsigned long)plain.length);
                         if (plain) {
+                            LKLog(@"[注册] 解密后 = %@",
+                                  plain.length > 300 ? [plain substringToIndex:300] : plain);
                             id inner = [NSJSONSerialization JSONObjectWithData:
                                 [plain dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
                             if ([inner isKindOfClass:[NSDictionary class]]) token = inner[@"access_token"];
@@ -119,6 +134,8 @@ static NSString *const kGuestURL    = @"https://sea.api.lovekeyboard.com/v2/auth
                     }
                 }
             }
+            LKLog(@"[注册] token = %@", token.length ? [NSString stringWithFormat:@"%@...(len=%lu)",
+                  [token substringToIndex:MIN(12, token.length)], (unsigned long)token.length] : @"(nil)");
             if (completion) completion(token);
         }];
     [task resume];

@@ -1,8 +1,10 @@
 #import "LKURLProtocol.h"
 #import "LKCrypto.h"
 #import "LKAccount.h"
+#import "LKLog.h"
 
 static NSString *const kHandledKey = @"LKHandled";
+static NSMutableSet *gSeenHosts = nil;
 
 @implementation LKURLProtocol
 
@@ -11,6 +13,14 @@ static NSString *const kHandledKey = @"LKHandled";
     if (host.length == 0 || ![host containsString:@"lovekeyboard"]) return NO;
     // 自己发起的注册请求已打标，避免递归
     if ([NSURLProtocol propertyForKey:kHandledKey inRequest:request]) return NO;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ gSeenHosts = [NSMutableSet set]; });
+    @synchronized (gSeenHosts) {
+        if (![gSeenHosts containsObject:host]) {
+            [gSeenHosts addObject:host];
+            LKLog(@"[拦截] 命中 host=%@ 首次出现", host);
+        }
+    }
     return YES;
 }
 
@@ -22,15 +32,21 @@ static NSString *const kHandledKey = @"LKHandled";
     NSMutableURLRequest *req = [self.request mutableCopy];
     [NSURLProtocol setProperty:@YES forKey:kHandledKey inRequest:req];
     NSString *path = req.URL.path ?: @"";
+    LKLog(@"[请求] %@ %@", req.HTTPMethod, req.URL.absoluteString);
+    LKLog(@"[请求] 原始 Authorization = %@", [req valueForHTTPHeaderField:@"Authorization"] ?: @"(无)");
 
     if ([path hasPrefix:@"/v1/chat/"]) {
         // 关键：每次超会说请求都用全新访客账号（每号仅 3 次额度）
+        LKLog(@"[chat] 进入换账号流程 path=%@", path);
         __weak typeof(self) weakSelf = self;
         [LKAccount fetchGuestToken:^(NSString *token) {
             __strong typeof(weakSelf) self = weakSelf;
             if (!self) return;
             if (token.length > 0) {
                 [req setValue:[@"Bearer " stringByAppendingString:token] forHTTPHeaderField:@"Authorization"];
+                LKLog(@"[chat] Authorization 已替换 token=%@@...", [token substringToIndex:MIN(12, token.length)]);
+            } else {
+                LKLog(@"[chat] !! token 获取失败，保留原 Authorization");
             }
             [self forward:req];
         }];
@@ -39,7 +55,9 @@ static NSString *const kHandledKey = @"LKHandled";
     }
 }
 
-- (void)stopLoading { }
+- (void)stopLoading {
+    LKLog(@"[请求] stopLoading %@", self.request.URL.path);
+}
 
 - (void)forward:(NSURLRequest *)req {
     NSURLSessionConfiguration *cfg = [NSURLSessionConfiguration ephemeralSessionConfiguration];
@@ -50,9 +68,18 @@ static NSString *const kHandledKey = @"LKHandled";
         completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
             __strong typeof(weakSelf) self = weakSelf;
             if (!self) return;
-            if (error) { [self.client URLProtocol:self didFailWithError:error]; return; }
+            NSInteger code = [response isKindOfClass:[NSHTTPURLResponse class]]
+                             ? ((NSHTTPURLResponse *)response).statusCode : -1;
+            if (error) {
+                LKLog(@"[响应] !! 网络错误 status=%ld err=%@ path=%@", (long)code, error.localizedDescription, req.URL.path);
+                [self.client URLProtocol:self didFailWithError:error];
+                return;
+            }
+            LKLog(@"[响应] status=%ld bytes=%lu path=%@", (long)code, (unsigned long)data.length, req.URL.path);
             NSData *patched = [self transformForURL:req.URL data:data];
             NSData *out = patched ?: data;
+            LKLog(@"[响应] 改写=%@ (%lu -> %lu bytes)", patched ? @"已改写" : @"未改动",
+                  (unsigned long)data.length, (unsigned long)out.length);
             NSURLResponse *fixed = patched ? [self stripLengthHeaders:response] : response;
             [self.client URLProtocol:self didReceiveResponse:fixed cacheStoragePolicy:NSURLCacheStorageNotAllowed];
             if (out.length > 0) [self.client URLProtocol:self didLoadData:out];
@@ -67,9 +94,16 @@ static NSString *const kHandledKey = @"LKHandled";
     if (data.length == 0) return nil;
     NSString *path = url.path ?: @"";
     id obj = [NSJSONSerialization JSONObjectWithData:data options:NSJSONReadingMutableContainers error:nil];
-    if (![obj isKindOfClass:[NSDictionary class]]) return nil;
+    if (![obj isKindOfClass:[NSDictionary class]]) {
+        LKLog(@"[改写] path=%@ 非 JSON 对象，跳过", path);
+        return nil;
+    }
     NSMutableDictionary *wrapped = obj;
     BOOL isV1 = [path hasPrefix:@"/v1/"];
+    id d0 = wrapped[@"data"];
+    LKLog(@"[改写] path=%@ isV1=%@ dataType=%@", path, isV1 ? @"Y" : @"N",
+          [d0 isKindOfClass:[NSString class]] ? @"string(加密)" :
+          ([d0 isKindOfClass:[NSDictionary class]] ? @"dict(明文)" : @"其它"));
 
     if ([path hasPrefix:@"/v2/account/vip"] || [path hasPrefix:@"/v1/account/vip"]) {
         id d = wrapped[@"data"];
@@ -79,14 +113,24 @@ static NSString *const kHandledKey = @"LKHandled";
     if ([path hasPrefix:@"/v2/account"] || [path hasPrefix:@"/v1/account"]) {
         id d = wrapped[@"data"];
         if (isV1) {
-            if ([d isKindOfClass:[NSDictionary class]]) wrapped[@"data"] = [self patchVip:d];
+            if ([d isKindOfClass:[NSDictionary class]]) {
+                wrapped[@"data"] = [self patchVip:d];
+                LKLog(@"[改写] account v1 明文，已注入会员字段");
+            } else {
+                LKLog(@"[改写] account v1 但 data 非 dict，未处理");
+            }
         } else if ([d isKindOfClass:[NSString class]]) {
             NSString *plain = [LKCrypto aesDecrypt:d key:[LKAccount aesKey]];
+            LKLog(@"[改写] account v2 AES 解密 %@ (明文长度=%lu)",
+                  plain ? @"成功" : @"失败", (unsigned long)plain.length);
             id acc = plain ? [NSJSONSerialization JSONObjectWithData:[plain dataUsingEncoding:NSUTF8StringEncoding]
                                                             options:NSJSONReadingMutableContainers error:nil] : nil;
             if ([acc isKindOfClass:[NSDictionary class]]) {
                 NSString *re = [LKCrypto aesEncrypt:[self jsonString:[self patchVip:acc]] key:[LKAccount aesKey]];
                 if (re) wrapped[@"data"] = re;
+                LKLog(@"[改写] account v2 回写 %@", re ? @"成功" : @"失败");
+            } else {
+                LKLog(@"[改写] account v2 解密后非 JSON，跳过");
             }
         }
         return [self encode:wrapped];
@@ -96,18 +140,22 @@ static NSString *const kHandledKey = @"LKHandled";
         if (isV1) {
             [self patchConfig:wrapped];
             if ([d isKindOfClass:[NSDictionary class]]) [self patchConfig:d];
+            LKLog(@"[改写] config v1 明文，已清空 AINeedLogin");
         } else if ([d isKindOfClass:[NSString class]]) {
             NSString *plain = [LKCrypto aesDecrypt:d key:[LKAccount aesKey]];
+            LKLog(@"[改写] config v2 AES 解密 %@", plain ? @"成功" : @"失败");
             id conf = plain ? [NSJSONSerialization JSONObjectWithData:[plain dataUsingEncoding:NSUTF8StringEncoding]
                                                              options:NSJSONReadingMutableContainers error:nil] : nil;
             if ([conf isKindOfClass:[NSDictionary class]]) {
                 [self patchConfig:conf];
                 NSString *re = [LKCrypto aesEncrypt:[self jsonString:conf] key:[LKAccount aesKey]];
                 if (re) wrapped[@"data"] = re;
+                LKLog(@"[改写] config v2 回写 %@", re ? @"成功" : @"失败");
             }
         }
         return [self encode:wrapped];
     }
+    LKLog(@"[改写] path=%@ 无匹配规则，原样放行", path);
     return nil;
 }
 
