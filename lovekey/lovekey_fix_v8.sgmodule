@@ -1,0 +1,22 @@
+#!name=Lovekey 修复版 v8
+#!desc=Lovekey iOS 1.8.5/1.9.0：超会说每次请求独立访客账号(绕开每号3次额度)+会员字段+关闭绑定手机号弹窗。内联 CryptoJS，无 eval
+#!author=xiadasy / awjd007
+#!homepage=https://github.com/awjd007/qx-scripts
+#!category=Lovekey
+
+[URL Rewrite]
+# 模块级对照：拦截统计上报。若本模块生效，抓包中该请求应消失
+^https:\/\/sea\.api\.lovekeyboard\.com\/dataCenter\/api\/event\/upload - reject
+
+[Script]
+# 超会说 / 帮你回 / 开场白：请求头替换为可用访客鉴权
+Lovekey Chat = type=http-request, pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/v1\/chat\/(?:keyboard-(?:ow|stream)-msg|stream_super_msg), script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@491d6fb4d7228cd3c2d2eca7dc2be1223cd638af/lovekey/lovekey_fix.js, requires-body=false, timeout=30
+
+# 账号信息：解密响应、补全会员与手机号字段后重新加密
+Lovekey Account = type=http-response, pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/v[12]\/account, script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@491d6fb4d7228cd3c2d2eca7dc2be1223cd638af/lovekey/lovekey_fix.js, requires-body=true, timeout=30, max-size=262144
+
+# 配置：清空 AINeedLogin、放开游客登录
+Lovekey Config = type=http-response, pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/v[12]\/app\/config, script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@491d6fb4d7228cd3c2d2eca7dc2be1223cd638af/lovekey/lovekey_fix.js, requires-body=true, timeout=30, max-size=262144
+
+[MITM]
+hostname = %APPEND% sea.api.lovekeyboard.com
