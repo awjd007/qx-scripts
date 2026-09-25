@@ -204,18 +204,26 @@ async function accountResponse() {
 }
 
 
-// 一次性诊断：抓 chs-stream-msg 的请求头（超会说的真实鉴权方式）
+// 一次性诊断：抓 chs-stream-msg 的完整请求（超会说的真实鉴权方式）
 function chsProbe() {
   try {
     if ($persistentStore.read("Lovekey_ChsProbe") === "1") return $done({});
     $persistentStore.write("1", "Lovekey_ChsProbe");
     const hs = ($request && $request.headers) || {};
-    const keys = Object.keys(hs).filter(k => /auth|token|sign|device|identifier|timestamp|install|uuid/i.test(k));
-    const brief = keys.map(k => k + "=" + String(hs[k]).slice(0, 42)).join(" | ");
-    if (typeof $notify !== "undefined") {
-      $notify("Lovekey 超会说请求头", "抓到 " + keys.length + " 个鉴权相关头", brief.slice(0, 400) || "(无)");
+    const pick = ["authorization", "Authorization", "sign", "timestamp", "device-identifier",
+                  "device-uuid", "identifier", "install-id", "token", "app-version", "channel"];
+    const lines = [];
+    for (const k of Object.keys(hs)) {
+      if (pick.some(p => p.toLowerCase() === k.toLowerCase())) {
+        lines.push(k + "=" + String(hs[k]).slice(0, 48));
+      }
     }
-    try { console.log("[Lovekey] chs headers: " + brief); } catch (_) {}
+    const body = String(($request && $request.body) || "").slice(0, 300);
+    if (typeof $notify !== "undefined") {
+      $notify("Lovekey 超会说·请求头", "共 " + lines.length + " 个关键头", lines.join(" | ").slice(0, 480) || "(无)");
+      $notify("Lovekey 超会说·请求体", "body " + body.length + " 字符", body || "(空)");
+    }
+    try { console.log("[Lovekey] chs headers: " + lines.join(" | ") + " || body: " + body); } catch (_) {}
   } catch (_) {}
   $done({});
 }
@@ -223,10 +231,10 @@ function chsProbe() {
 function vip2Probe() {
   try {
     if ($persistentStore.read("Lovekey_Vip2Probe") === "1") return $done({});
-    if ($persistentStore.read("Lovekey_Vip2Notify") !== "1") return $done({});
     $persistentStore.write("1", "Lovekey_Vip2Probe");
-    const b = String(($response && $response.body) || "").slice(0, 180);
-    if (typeof $notify !== "undefined") $notify("Lovekey vip2 响应", b.slice(0, 60), b);
+    const b = String(($response && $response.body) || "").slice(0, 320);
+    if (typeof $notify !== "undefined") $notify("Lovekey vip2 响应", "HTTP " + (($response && $response.status) || "?"), b);
+    try { console.log("[Lovekey] vip2 resp: " + b); } catch (_) {}
   } catch (_) {}
   $done({});
 }
