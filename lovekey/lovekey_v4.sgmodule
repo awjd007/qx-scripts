@@ -1,0 +1,11 @@
+#!name=Lovekey 修复版 v4
+#!desc=Lovekey 1.8.5/1.9.0 通用：解锁会员、关闭AI绑定手机号弹窗、清零配额、设备签名探针
+#!author=awjd007
+#!homepage=https://github.com/awjd007/qx-scripts
+
+[Script]
+Lovekey-Req=type=http-request,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/(?:v1\/chat\/(?:keyboard-(?:ow|stream)-msg|stream_super_msg)|v1\/device\/chs-stream-msg|v[12]\/device\/index),requires-body=0,script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@main/lovekey/lovekey_v4.js,script-update-interval=0
+Lovekey-Resp=type=http-response,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/(?:v[12]\/account(?:\?|$)|v1\/device\/account\/vip2|v[12]\/app\/config|v1\/device\/chs-stream-msg),requires-body=1,max-size=262144,script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@main/lovekey/lovekey_v4.js,script-update-interval=0
+
+[MITM]
+hostname = %APPEND% sea.api.lovekeyboard.com
