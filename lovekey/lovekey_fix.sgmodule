@@ -1,0 +1,12 @@
+#!name=Lovekey 修复版（自包含）
+#!desc=Lovekey iOS 1.8.5：额度轮换(每次请求新账号)+会员字段+关闭绑定弹窗+放开游客登录。内联 CryptoJS，无 eval
+#!author=xiadasy / awjd007
+#!homepage=https://github.com/awjd007/qx-scripts
+
+[Script]
+Lovekey-Chat=type=http-request,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/v1\/chat\/(?:keyboard-(?:ow|stream)-msg|stream_super_msg),requires-body=0,script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@PLACEHOLDER/lovekey/lovekey_fix.js,script-update-interval=0
+Lovekey-Account=type=http-response,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/v[12]\/account(\/vip)?(\?|$),requires-body=1,max-size=262144,script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@PLACEHOLDER/lovekey/lovekey_fix.js,script-update-interval=0
+Lovekey-Config=type=http-response,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/v[12]\/app\/config(\?|$),requires-body=1,max-size=262144,script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@PLACEHOLDER/lovekey/lovekey_fix.js,script-update-interval=0
+
+[MITM]
+hostname = %APPEND% sea.api.lovekeyboard.com
