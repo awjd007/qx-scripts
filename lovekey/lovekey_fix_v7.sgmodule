@@ -1,0 +1,18 @@
+#!name=Lovekey 修复版 v7（自包含·超会说可用）
+#!desc=Lovekey iOS 1.8.5/1.9.0：超会说每次请求独立访客账号(绕开每号3次额度)+会员字段修复+关闭绑定手机号弹窗。内联 CryptoJS，无 eval、无 CDN 依赖
+#!author=xiadasy / awjd007
+#!homepage=https://github.com/awjd007/qx-scripts
+#!category=Lovekey
+
+[Script]
+# 超会说 / 帮你回 / 开场白：请求头替换为可用访客鉴权（每条 pattern 均以 (\?[^#]*)?$ 收尾，兼容全匹配与部分匹配两种语义）
+Lovekey Chat = type=http-request, pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/v1\/chat\/(?:keyboard-(?:ow|stream)-msg|stream_super_msg)(\?[^#]*)?$, requires-body=0, script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@491d6fb4d7228cd3c2d2eca7dc2be1223cd638af/lovekey/lovekey_fix.js, script-update-interval=0
+
+# 账号信息：解密响应、补全会员与手机号字段后重新加密
+Lovekey Account = type=http-response, pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/v[12]\/account(\/vip)?(\?[^#]*)?$, requires-body=1, max-size=262144, script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@491d6fb4d7228cd3c2d2eca7dc2be1223cd638af/lovekey/lovekey_fix.js, script-update-interval=0
+
+# 配置：清空 AINeedLogin、放开游客登录
+Lovekey Config = type=http-response, pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/v[12]\/app\/config(\?[^#]*)?$, requires-body=1, max-size=262144, script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@491d6fb4d7228cd3c2d2eca7dc2be1223cd638af/lovekey/lovekey_fix.js, script-update-interval=0
+
+[MITM]
+hostname = %APPEND% sea.api.lovekeyboard.com
