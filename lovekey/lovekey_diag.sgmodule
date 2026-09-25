@@ -9,13 +9,13 @@
 
 [Script]
 # A：等号两侧无空格（此前正式模块使用的写法）
-LkDiagA=type=http-request,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/v,requires-body=0,script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@af948af2163c49ffc9865184e7958e027d6a5aa1/lovekey/lovekey_diag_a.js,script-update-interval=0
+LkDiagA=type=http-request,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/v,requires-body=0,script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@5c973dae5eb50554267e48dcde4fe2d4cb5fabc1/lovekey/lovekey_diag_a.js,script-update-interval=0
 # B：等号两侧带空格（BoxJs / WarpPanel 等公开模块使用的写法）
-LkDiagB = type=http-request, pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/v, requires-body=false, timeout=30, script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@af948af2163c49ffc9865184e7958e027d6a5aa1/lovekey/lovekey_diag_b.js, script-update-interval=0
+LkDiagB = type=http-request, pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/v, requires-body=false, timeout=30, script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@5c973dae5eb50554267e48dcde4fe2d4cb5fabc1/lovekey/lovekey_diag_b.js, script-update-interval=0
 # C：Surge 原生脚本行
-http-request ^https:\/\/sea\.api\.lovekeyboard\.com\/v script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@af948af2163c49ffc9865184e7958e027d6a5aa1/lovekey/lovekey_diag_c.js, requires-body=false, timeout=30, tag=LkDiagC
+http-request ^https:\/\/sea\.api\.lovekeyboard\.com\/v script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@5c973dae5eb50554267e48dcde4fe2d4cb5fabc1/lovekey/lovekey_diag_c.js, requires-body=false, timeout=30, tag=LkDiagC
 # D：响应阶段 + 带空格
-LkDiagD = type=http-response, pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/v, requires-body=true, max-size=262144, timeout=30, script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@af948af2163c49ffc9865184e7958e027d6a5aa1/lovekey/lovekey_diag_d.js, script-update-interval=0
+LkDiagD = type=http-response, pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/v, requires-body=true, max-size=262144, timeout=30, script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@5c973dae5eb50554267e48dcde4fe2d4cb5fabc1/lovekey/lovekey_diag_d.js, script-update-interval=0
 
 [MITM]
 hostname = %APPEND% sea.api.lovekeyboard.com
