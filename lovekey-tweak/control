@@ -1,0 +1,11 @@
+Package: com.awjd007.lovekeytweak
+Name: LovekeyTweak
+Version: 1.0.0
+Description: Lovekey 超会说修复（进程内注入版，不走 MITM）
+Homepage: https://github.com/awjd007/qx-scripts
+Section: Tweaks
+Depends: mobilesubstrate, firmware (>= 14.0)
+Priority: optional
+Maintainer: awjd007
+Author: awjd007
+Architecture: iphoneos-arm

@@ -1,0 +1,43 @@
+name: Build LovekeyTweak
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'lovekey-tweak/**'
+      - '.github/workflows/build-lovekey-tweak.yml'
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Theos
+        uses: Randomblock1/theos-action@v1
+
+      - name: Build package
+        run: |
+          cd lovekey-tweak
+          make clean || true
+          make package FINALPACKAGE=1
+
+      - name: Build rootless package
+        run: |
+          cd lovekey-tweak
+          make clean || true
+          make package SCHEME=rootless FINALPACKAGE=1
+
+      - name: Build roothide package
+        run: |
+          cd lovekey-tweak
+          make clean || true
+          make package SCHEME=roothide FINALPACKAGE=1
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: LovekeyTweak-debs
+          path: lovekey-tweak/packages/*.deb
+          if-no-files-found: warn
