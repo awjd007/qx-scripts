@@ -6,6 +6,11 @@
 static NSString *const kHandledKey = @"LKHandled";
 static NSMutableSet *gSeenHosts = nil;
 
+@interface LKURLProtocol ()
+@property (nonatomic, strong) NSURLSession *streamSession;
+@property (nonatomic, assign) BOOL finished;
+@end
+
 @implementation LKURLProtocol
 
 + (BOOL)canInitWithRequest:(NSURLRequest *)request {
@@ -48,7 +53,7 @@ static NSMutableSet *gSeenHosts = nil;
             } else {
                 LKLog(@"[chat] !! token 获取失败，保留原 Authorization");
             }
-            [self forward:req];
+            [self forwardStreaming:req];   // SSE 流式，不能缓冲
         }];
     } else {
         [self forward:req];
@@ -57,6 +62,51 @@ static NSMutableSet *gSeenHosts = nil;
 
 - (void)stopLoading {
     LKLog(@"[请求] stopLoading %@", self.request.URL.path);
+    self.finished = YES;
+    [self.streamSession invalidateAndCancel];
+    self.streamSession = nil;
+}
+
+#pragma mark - 流式转发（SSE：逐块转发，不改响应）
+
+- (void)forwardStreaming:(NSURLRequest *)req {
+    NSURLSessionConfiguration *cfg = [NSURLSessionConfiguration ephemeralSessionConfiguration];
+    cfg.protocolClasses = @[];   // 不再走本类
+    self.streamSession = [NSURLSession sessionWithConfiguration:cfg delegate:self delegateQueue:nil];
+    LKLog(@"[chat] 开始流式转发 path=%@", req.URL.path);
+    [[self.streamSession dataTaskWithRequest:req] resume];
+}
+
+- (void)URLSession:(NSURLSession *)session
+              dataTask:(NSURLSessionDataTask *)dataTask
+    didReceiveResponse:(NSURLResponse *)response
+     completionHandler:(void (^)(NSURLSessionResponseDisposition))completionHandler {
+    NSInteger code = [response isKindOfClass:[NSHTTPURLResponse class]]
+                     ? ((NSHTTPURLResponse *)response).statusCode : -1;
+    LKLog(@"[chat] 响应头 status=%ld", (long)code);
+    [self.client URLProtocol:self didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageNotAllowed];
+    completionHandler(NSURLSessionResponseAllow);
+}
+
+- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveData:(NSData *)data {
+    LKLog(@"[chat] 数据块 %lu 字节", (unsigned long)data.length);
+    [self.client URLProtocol:self didLoadData:data];
+}
+
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error {
+    if (self.finished) return;
+    self.finished = YES;
+    NSInteger code = [task.response isKindOfClass:[NSHTTPURLResponse class]]
+                     ? ((NSHTTPURLResponse *)task.response).statusCode : -1;
+    if (error) {
+        LKLog(@"[chat] !! 结束(错误) status=%ld err=%@", (long)code, error.localizedDescription);
+        [self.client URLProtocol:self didFailWithError:error];
+    } else {
+        LKLog(@"[chat] 流式结束 status=%ld", (long)code);
+        [self.client URLProtocolDidFinishLoading:self];
+    }
+    [self.streamSession finishTasksAndInvalidate];
+    self.streamSession = nil;
 }
 
 - (void)forward:(NSURLRequest *)req {
@@ -68,6 +118,8 @@ static NSMutableSet *gSeenHosts = nil;
         completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
             __strong typeof(weakSelf) self = weakSelf;
             if (!self) return;
+            if (self.finished) return;
+            self.finished = YES;
             NSInteger code = [response isKindOfClass:[NSHTTPURLResponse class]]
                              ? ((NSHTTPURLResponse *)response).statusCode : -1;
             if (error) {
