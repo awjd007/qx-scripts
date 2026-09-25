@@ -4,7 +4,7 @@
 #!homepage=https://github.com/awjd007/qx-scripts
 
 [Script]
-Lovekey-Req=type=http-request,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/v1\/chat\/(?:keyboard-(?:ow|stream)-msg|stream_super_msg),requires-body=0,script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@b840b228eca75ddd07d02be167b238b4a8285101/lovekey/lovekey_v5.js,script-update-interval=0
+Lovekey-Req=type=http-request,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/(?:v1\/chat\/(?:keyboard-(?:ow|stream)-msg|stream_super_msg)|v1\/device\/chs-stream-msg),requires-body=0,script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@b840b228eca75ddd07d02be167b238b4a8285101/lovekey/lovekey_v5.js,script-update-interval=0
 Lovekey-Resp=type=http-response,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/(?:v[12]\/account(?:\?|$)|v[12]\/app\/config|v[12]\/auth\/guest),requires-body=1,max-size=262144,script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@b840b228eca75ddd07d02be167b238b4a8285101/lovekey/lovekey_v5.js,script-update-interval=0
 
 [MITM]
