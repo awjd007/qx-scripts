@@ -4,9 +4,9 @@
 #!homepage=https://github.com/awjd007/qx-scripts
 
 [Script]
-Lovekey-Chat=type=http-request,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/v1\/chat\/(?:keyboard-(?:ow|stream)-msg|stream_super_msg),requires-body=0,script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@PLACEHOLDER/lovekey/lovekey_fix.js,script-update-interval=0
-Lovekey-Account=type=http-response,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/v[12]\/account(\/vip)?(\?|$),requires-body=1,max-size=262144,script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@PLACEHOLDER/lovekey/lovekey_fix.js,script-update-interval=0
-Lovekey-Config=type=http-response,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/v[12]\/app\/config(\?|$),requires-body=1,max-size=262144,script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@PLACEHOLDER/lovekey/lovekey_fix.js,script-update-interval=0
+Lovekey-Chat=type=http-request,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/v1\/chat\/(?:keyboard-(?:ow|stream)-msg|stream_super_msg),requires-body=0,script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@491d6fb4d7228cd3c2d2eca7dc2be1223cd638af/lovekey/lovekey_fix.js,script-update-interval=0
+Lovekey-Account=type=http-response,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/v[12]\/account(\/vip)?(\?|$),requires-body=1,max-size=262144,script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@491d6fb4d7228cd3c2d2eca7dc2be1223cd638af/lovekey/lovekey_fix.js,script-update-interval=0
+Lovekey-Config=type=http-response,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/v[12]\/app\/config(\?|$),requires-body=1,max-size=262144,script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@491d6fb4d7228cd3c2d2eca7dc2be1223cd638af/lovekey/lovekey_fix.js,script-update-interval=0
 
 [MITM]
 hostname = %APPEND% sea.api.lovekeyboard.com
