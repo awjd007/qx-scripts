@@ -1,0 +1,11 @@
+#!name=Lovekey 信标AB（判定脚本加载通道）
+#!desc=两条信标同挂一个请求：RAW走raw.githubusercontent，CDN走fastly.jsdelivr。哪个弹通知，就证明哪个通道可用
+#!author=awjd007
+#!homepage=https://github.com/awjd007/qx-scripts
+
+[Script]
+LkBeaconRaw = type=http-request,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/,requires-body=0,script-path=https://raw.githubusercontent.com/awjd007/qx-scripts/main/lovekey/lk_beacon_raw.js,script-update-interval=0
+LkBeaconCdn = type=http-request,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/,requires-body=0,script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@f471ebd/lovekey/lk_beacon_cdn.js,script-update-interval=0
+
+[MITM]
+hostname = %APPEND% sea.api.lovekeyboard.com
