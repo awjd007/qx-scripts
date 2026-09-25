@@ -1,0 +1,11 @@
+#!name=Lovekey 修复版（原版补丁）
+#!desc=基于 xiadasy 原版打补丁：账号配额轮换(每号3次自动换)+v1明文账号+关闭绑定弹窗
+#!author=xiadasy (patch: awjd007)
+#!homepage=https://github.com/awjd007/qx-scripts
+
+[Script]
+Lovekey-Req=type=http-request,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/v1\/chat\/(?:keyboard-(?:ow|stream)-msg|stream_super_msg),requires-body=0,script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@main/lovekey/lovekey_patch.js,script-update-interval=0
+Lovekey-Resp=type=http-response,pattern=^https:\/\/sea\.api\.lovekeyboard\.com\/(?:v[12]\/account(?:\?|$)|v[12]\/app\/config),requires-body=1,max-size=262144,script-path=https://fastly.jsdelivr.net/gh/awjd007/qx-scripts@main/lovekey/lovekey_patch.js,script-update-interval=0
+
+[MITM]
+hostname = %APPEND% sea.api.lovekeyboard.com
