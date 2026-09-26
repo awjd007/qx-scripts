@@ -7,6 +7,7 @@
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 #import "LKURLProtocol.h"
+#import "LKLogin.h"
 #import "LKLog.h"
 
 static IMP gOrigProtocolClasses = NULL;
@@ -63,6 +64,12 @@ static void LKInit(void) {
         } else {
             LKLog(@"[FATAL] LKURLProtocol 类未编译进来");
         }
+
+        // 3) 伪造本地登录态。
+        // 客户端在点「超会说/帮你回/开场白」前会读 App Group 里的登录缓存判断
+        // 是否已绑定账号，判定为游客时直接弹窗、请求根本不发出。
+        // 这一步让客户端读到「已绑定 + 永久会员」。
+        [LKLogin install];
 
         // 3) 自检：确认注入是否真的生效（会立刻走一次 protocolClasses）
         if (gOrigProtocolClasses) {

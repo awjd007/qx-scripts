@@ -15,7 +15,7 @@ endif
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = LovekeyTweak
-LovekeyTweak_FILES = Tweak.m LKLog.m LKCrypto.m LKAccount.m LKURLProtocol.m
+LovekeyTweak_FILES = Tweak.m LKLog.m LKCrypto.m LKAccount.m LKLogin.m LKURLProtocol.m
 LovekeyTweak_CFLAGS = -fobjc-arc -w -O2
 LovekeyTweak_FRAMEWORKS = Foundation
 # 关键：纯 runtime 实现，不依赖 substrate。

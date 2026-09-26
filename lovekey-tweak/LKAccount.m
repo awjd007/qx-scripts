@@ -1,5 +1,6 @@
 #import "LKAccount.h"
 #import "LKCrypto.h"
+#import "LKLogin.h"
 #import "LKLog.h"
 
 static NSString *const kAESKey      = @"d4XvusEYeafO9SBK";
@@ -41,7 +42,10 @@ static NSString *const kGuestURL    = @"https://sea.api.lovekeyboard.com/v2/auth
     NSArray *models = @[@"iPhone 16 Pro Max", @"iPhone 16 Pro", @"iPhone 16",
                         @"iPhone 15 Pro Max", @"iPhone 15 Pro", @"iPhone 15"];
     NSString *model = models[arc4random_uniform((uint32_t)models.count)];
-    NSString *uid = [self uuid];
+    // device identifier 固定（首次生成后持久化）。
+    // 服务端的 launchV2 等接口按设备标识统计启动，每次换新 UUID 会被当成全新设备。
+    NSString *uid = [LKLogin deviceIdentifier];
+    // install_id 每次变化 —— 它才是「新访客账号」的区分依据
     NSString *flat = [uid stringByReplacingOccurrencesOfString:@"-" withString:@""];
     NSString *prefix = [flat substringToIndex:MIN(16, flat.length)];
     while (prefix.length < 16) prefix = [prefix stringByAppendingString:@"0"];

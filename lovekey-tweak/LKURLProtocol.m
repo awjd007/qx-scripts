@@ -1,6 +1,7 @@
 #import "LKURLProtocol.h"
 #import "LKCrypto.h"
 #import "LKAccount.h"
+#import "LKLogin.h"
 #import "LKLog.h"
 
 static NSString *const kHandledKey = @"LKHandled";
@@ -292,8 +293,9 @@ static NSMutableSet *gSeenHosts = nil;
     id nick = m[@"nickname"];
     if (![nick isKindOfClass:[NSString class]] || [(NSString *)nick hasPrefix:@"游客"]) m[@"nickname"] = @"baby";
     m[@"guest"] = @NO;
-    id mid = m[@"member_id"];
-    if (![mid respondsToSelector:@selector(integerValue)] || [mid integerValue] <= 0) m[@"member_id"] = @99999999;
+    // member_id 统一用本地持久化的伪会员 ID，保证各处一致
+    m[@"member_id"] = @([LKLogin memberID]);
+    m[@"id"] = @([LKLogin memberID]);
     m[@"perpetual_vip"] = @1;
     m[@"vip_expired_at"] = @"3742732800";
     m[@"member_vip"] = @2;
