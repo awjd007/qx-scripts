@@ -9,6 +9,8 @@ static NSMutableSet *gSeenHosts = nil;
 @interface LKURLProtocol ()
 @property (nonatomic, strong) NSURLSession *streamSession;
 @property (nonatomic, assign) BOOL finished;
+- (NSString *)preview:(NSString *)s max:(NSUInteger)max;
+- (BOOL)pathMatches:(NSString *)path pattern:(NSString *)pattern;
 @end
 
 @implementation LKURLProtocol
@@ -90,6 +92,10 @@ static NSMutableSet *gSeenHosts = nil;
 
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveData:(NSData *)data {
     LKLog(@"[chat] 数据块 %lu 字节", (unsigned long)data.length);
+    // 诊断：打印流式响应内容，定位服务端是否返回额度/绑定类错误
+    NSString *chunk = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    LKLog(@"[LKDBG] 流式 %@ (%luB): %@", dataTask.originalRequest.URL.path,
+          (unsigned long)data.length, [self preview:chunk max:600]);
     [self.client URLProtocol:self didLoadData:data];
 }
 
@@ -145,6 +151,9 @@ static NSMutableSet *gSeenHosts = nil;
 - (NSData *)transformForURL:(NSURL *)url data:(NSData *)data {
     if (data.length == 0) return nil;
     NSString *path = url.path ?: @"";
+    // 诊断：原样打印服务端响应，用于定位客户端"请先绑定账号"的判定依据
+    NSString *rawStr = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    LKLog(@"[LKDBG] 原始 %@ (%luB): %@", path, (unsigned long)data.length, [self preview:rawStr max:900]);
     id obj = [NSJSONSerialization JSONObjectWithData:data options:NSJSONReadingMutableContainers error:nil];
     if (![obj isKindOfClass:[NSDictionary class]]) {
         LKLog(@"[改写] path=%@ 非 JSON 对象，跳过", path);
@@ -157,12 +166,17 @@ static NSMutableSet *gSeenHosts = nil;
           [d0 isKindOfClass:[NSString class]] ? @"string(加密)" :
           ([d0 isKindOfClass:[NSDictionary class]] ? @"dict(明文)" : @"其它"));
 
-    if ([path hasPrefix:@"/v2/account/vip"] || [path hasPrefix:@"/v1/account/vip"]) {
+    // 路径匹配严格化：/v1/account 后面必须是结尾或 '?'，避免吞掉 /v1/account/vip 等子路径
+    BOOL isAccountVip = [self pathMatches:path pattern:@"/v1/account/vip"] || [self pathMatches:path pattern:@"/v2/account/vip"];
+    BOOL isAccount    = [self pathMatches:path pattern:@"/v1/account"]     || [self pathMatches:path pattern:@"/v2/account"];
+    BOOL isConfig     = [self pathMatches:path pattern:@"/v1/app/config"]  || [self pathMatches:path pattern:@"/v2/app/config"];
+
+    if (isAccountVip) {
         id d = wrapped[@"data"];
         if ([d isKindOfClass:[NSDictionary class]]) [self patchVipPage:d];
         return [self encode:wrapped];
     }
-    if ([path hasPrefix:@"/v2/account"] || [path hasPrefix:@"/v1/account"]) {
+    if (isAccount) {
         id d = wrapped[@"data"];
         if (isV1) {
             if ([d isKindOfClass:[NSDictionary class]]) {
@@ -187,7 +201,7 @@ static NSMutableSet *gSeenHosts = nil;
         }
         return [self encode:wrapped];
     }
-    if ([path hasPrefix:@"/v2/app/config"] || [path hasPrefix:@"/v1/app/config"]) {
+    if (isConfig) {
         id d = wrapped[@"data"];
         if (isV1) {
             [self patchConfig:wrapped];
@@ -232,6 +246,14 @@ static NSMutableSet *gSeenHosts = nil;
     if (!m[@"phone"]) m[@"phone"] = @"13800000000";
     m[@"has_password"] = @YES;
     m[@"third_party_bound"] = @YES;
+    // 服务端 /v1/account 实测返回这些 guest 相关字段，客户端据此判定"请先绑定账号"，
+    // 必须一并改写，否则仅改 guest 仍会被本地缓存判定为游客。
+    if (!m[@"guest_positive_at"]) m[@"guest_positive_at"] = @"2026-09-26 00:00:00";
+    if (!m[@"wechat_mini_program_open_id"]) m[@"wechat_mini_program_open_id"] = @"oLovekeyTweakBind";
+    if (!m[@"google_open_id"]) m[@"google_open_id"] = @"lovetweak.bind";
+    m[@"login_times"] = @1;
+    m[@"option"] = @1;
+    m[@"status"] = @1;
     m[@"used_chs_times"] = @0;
     m[@"used_bnh_times"] = @0;
     m[@"used_kcb_times"] = @0;
@@ -263,6 +285,21 @@ static NSMutableSet *gSeenHosts = nil;
 }
 
 #pragma mark - 工具
+
+// 路径精确匹配。url.path 已剥离查询串，故只做全等比较：
+//   /v1/account       → 命中
+//   /v1/account/vip   → 不命中（由 vip 分支单独处理）
+//   /v1/account/vip/theme → 不命中（与原脚本 (?:\?|$) 语义一致）
+- (BOOL)pathMatches:(NSString *)path pattern:(NSString *)pattern {
+    return [path isEqualToString:pattern];
+}
+
+// 日志截断，避免超长响应刷爆 syslog
+- (NSString *)preview:(NSString *)s max:(NSUInteger)max {
+    if (s.length == 0) return @"(空)";
+    if (s.length <= max) return s;
+    return [[s substringToIndex:max] stringByAppendingFormat:@"...(共 %lu 字)", (unsigned long)s.length];
+}
 
 - (NSString *)jsonString:(id)obj {
     NSData *d = [NSJSONSerialization dataWithJSONObject:obj options:0 error:nil];
