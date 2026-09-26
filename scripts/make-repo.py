@@ -9,7 +9,7 @@ DIST = os.path.join(ROOT, "dist", "lovekey-tweak")
 REPO = os.path.join(ROOT, "repo")
 
 # 索引里只发布的架构（roothide=arm64e, rootless=arm64, rootful=arm）
-PUBLISH_ARCHES = ("iphoneos-arm64e", "iphoneos-arm64", "iphoneos-arm")
+PUBLISH_ARCHES = ("iphoneos-arm64e",)
 
 
 def read_control(deb_path):
@@ -81,6 +81,7 @@ def main():
         fields["Size"] = str(len(data))
         fields["SHA256"] = hashlib.sha256(data).hexdigest()
         fields["MD5sum"] = hashlib.md5(data).hexdigest()
+        fields["SHA1"] = hashlib.sha1(data).hexdigest()
 
         # 复制 deb 进 repo（APT 要求 Filename 是源内相对路径）
         dst = os.path.join(REPO, fn)
@@ -92,12 +93,19 @@ def main():
         print("没有可发布的 deb")
         return 1
 
+    # 清掉 repo/ 里不再发布的 deb（架构变更后留下的孤儿文件）
+    published = {f["Filename"].lstrip("./") for f in entries}
+    for fn in os.listdir(REPO):
+        if fn.endswith(".deb") and fn not in published:
+            os.remove(os.path.join(REPO, fn))
+            print("清理旧 deb:", fn)
+
     # 按包名+架构排序，保证输出稳定
     entries.sort(key=lambda f: (f.get("Package", ""), f.get("Architecture", ""), f.get("Version", "")))
 
     prefer = ["Package", "Name", "Version", "Architecture", "Description",
               "Homepage", "Section", "Depends", "Priority", "Maintainer",
-              "Author", "Installed-Size", "Filename", "Size", "SHA256", "MD5sum"]
+              "Author", "Installed-Size", "Filename", "Size", "MD5sum", "SHA1", "SHA256"]
     buf = []
     for f in entries:
         keys = [k for k in prefer if k in f] + [k for k in f if k not in prefer]
@@ -109,33 +117,26 @@ def main():
     open(os.path.join(REPO, "Packages"), "wb").write(payload)
     with gzip.GzipFile(os.path.join(REPO, "Packages.gz"), "wb", mtime=0) as gz:
         gz.write(payload)
-    with lzma.open(os.path.join(REPO, "Packages.xz"), "wb") as xz:
-        xz.write(payload)
-
-    # Release 的哈希必须与磁盘上实际写入的文件一致，否则 APT 校验失败
-    files = []
-    for name in ("Packages", "Packages.gz", "Packages.xz"):
-        fp = os.path.join(REPO, name)
-        if os.path.exists(fp):
-            b = open(fp, "rb").read()
-            files.append((name, len(b), hashlib.md5(b).hexdigest(), hashlib.sha256(b).hexdigest()))
+    import bz2
+    with bz2.open(os.path.join(REPO, "Packages.bz2"), "wb") as bz:
+        bz.write(payload)
+    # 清理可能残留的旧格式，避免 APT 请求到过期文件
+    for stale in ("Packages.xz", "Packages.lzma", "Packages.zst"):
+        sp = os.path.join(REPO, stale)
+        if os.path.exists(sp):
+            os.remove(sp)
 
     lines = [
         "Origin: awjd007",
         "Label: LovekeyTweak",
         "Suite: stable",
         "Version: 1.0",
-        "Codename: ios",
+        "Codename: lovekey",
         "Architectures: " + " ".join(PUBLISH_ARCHES),
         "Components: main",
         "Description: Lovekey super-msg fix repo",
-        "MD5Sum:",
     ]
-    lines += [" " + md5 + " " + str(size) + " " + name for name, size, md5, _ in files]
-    lines.append("SHA256:")
-    lines += [" " + sha + " " + str(size) + " " + name for name, size, _, sha in files]
-    lines.append("")
-    release = "\n".join(lines)
+    release = "\n".join(lines) + "\n"
 
     open(os.path.join(REPO, "Release"), "w", newline="\n").write(release)
 

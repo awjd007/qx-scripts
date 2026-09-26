@@ -2,15 +2,7 @@ Origin: awjd007
 Label: LovekeyTweak
 Suite: stable
 Version: 1.0
-Codename: ios
-Architectures: iphoneos-arm64e iphoneos-arm64 iphoneos-arm
+Codename: lovekey
+Architectures: iphoneos-arm64e
 Components: main
 Description: Lovekey super-msg fix repo
-MD5Sum:
- 4761810ee454aaa563987ff1f253e109 2790 Packages
- 7aabab0707bfb3a67cc9258d543bbc0c 838 Packages.gz
- d4bd60cf75594fd432bffc2eaca846c3 816 Packages.xz
-SHA256:
- 9d11f879e27cc7e6b1b8c2d86463765c8d6c1378083b1852dcf6356a94e84d74 2790 Packages
- 066b36afc26ee9143598a4aa3bd03c1b1e7ac681379cf42134c5082fd2817882 838 Packages.gz
- efe69e2721173b88ce15b5ac2afad4d313bd1ce874e49641d8648bf118ad9e6f 816 Packages.xz

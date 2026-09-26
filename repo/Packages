@@ -1,73 +1,5 @@
 Package: com.awjd007.lovekeytweak
 Name: LovekeyTweak
-Version: 1.0.0
-Architecture: iphoneos-arm
-Description: Lovekey 超会说修复（进程内注入版，不走 MITM）
-Homepage: https://github.com/awjd007/qx-scripts
-Section: Tweaks
-Depends: mobilesubstrate, firmware (>= 14.0)
-Priority: optional
-Maintainer: awjd007
-Author: awjd007
-Installed-Size: 204
-Filename: ./com.awjd007.lovekeytweak_1.0.0_iphoneos-arm.deb
-Size: 14588
-SHA256: 44305b91221c2af852771c3688b5fefadb1405961a2cff3a77203d2e8f948a6b
-MD5sum: d79a25f415d68ab4780fd849ef1433aa
-
-Package: com.awjd007.lovekeytweak
-Name: LovekeyTweak
-Version: 1.1.0
-Architecture: iphoneos-arm
-Description: Lovekey 超会说修复（进程内注入版，TrollFools 兼容，纯 runtime 无 substrate 依赖）
-Homepage: https://github.com/awjd007/qx-scripts
-Section: Tweaks
-Depends: firmware (>= 14.0)
-Priority: optional
-Maintainer: awjd007
-Author: awjd007
-Installed-Size: 240
-Filename: ./com.awjd007.lovekeytweak_1.1.0_iphoneos-arm.deb
-Size: 20384
-SHA256: 3c416dce415b6b13f92f57addda1c47a368190810a765082dd3e2c3fe4893684
-MD5sum: cd7a1521210f4786b19837b601b65b2b
-
-Package: com.awjd007.lovekeytweak
-Name: LovekeyTweak
-Version: 1.0.0
-Architecture: iphoneos-arm64
-Description: Lovekey 超会说修复（进程内注入版，不走 MITM）
-Homepage: https://github.com/awjd007/qx-scripts
-Section: Tweaks
-Depends: mobilesubstrate, firmware (>= 14.0)
-Priority: optional
-Maintainer: awjd007
-Author: awjd007
-Installed-Size: 204
-Filename: ./com.awjd007.lovekeytweak_1.0.0_iphoneos-arm64.deb
-Size: 14666
-SHA256: becbd0ebfef6642ad8ef3278385ad21394839931af8ee52bc66bfc6980daa2f9
-MD5sum: 26d4120cd92db98954f81aa7a453b44d
-
-Package: com.awjd007.lovekeytweak
-Name: LovekeyTweak
-Version: 1.1.0
-Architecture: iphoneos-arm64
-Description: Lovekey 超会说修复（进程内注入版，TrollFools 兼容，纯 runtime 无 substrate 依赖）
-Homepage: https://github.com/awjd007/qx-scripts
-Section: Tweaks
-Depends: firmware (>= 14.0)
-Priority: optional
-Maintainer: awjd007
-Author: awjd007
-Installed-Size: 240
-Filename: ./com.awjd007.lovekeytweak_1.1.0_iphoneos-arm64.deb
-Size: 20480
-SHA256: 7e23dce3120282a07660dad9eb52076c6905ace410a9f441a91fca4536ab7569
-MD5sum: 24f6d9e56eb8a40abf5025d983c3f6de
-
-Package: com.awjd007.lovekeytweak
-Name: LovekeyTweak
 Version: 1.1.0
 Architecture: iphoneos-arm64e
 Description: Lovekey 超会说修复（进程内注入版，TrollFools 兼容，纯 runtime 无 substrate 依赖）
@@ -80,5 +12,6 @@ Author: awjd007
 Installed-Size: 272
 Filename: ./com.awjd007.lovekeytweak_1.1.0_iphoneos-arm64e.deb
 Size: 23356
-SHA256: 26ac4ed1297e4923c0b700a6f55a19d6cf4745d97fd7f5b804212e705d81f114
 MD5sum: 8940857bb74ff3825b50e390b9d5e53c
+SHA1: 3c6df6c13cf93886ffd7510b41883e7b5c9a6244
+SHA256: 26ac4ed1297e4923c0b700a6f55a19d6cf4745d97fd7f5b804212e705d81f114
