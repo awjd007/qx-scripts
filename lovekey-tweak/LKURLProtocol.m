@@ -11,6 +11,8 @@ static NSMutableSet *gSeenHosts = nil;
 @property (nonatomic, assign) BOOL finished;
 - (NSString *)preview:(NSString *)s max:(NSUInteger)max;
 - (BOOL)pathMatches:(NSString *)path pattern:(NSString *)pattern;
+- (NSData *)fixLaunchReport:(NSData *)body;
+- (NSString *)stableDeviceIdentifier;
 @end
 
 @implementation LKURLProtocol
@@ -41,6 +43,23 @@ static NSMutableSet *gSeenHosts = nil;
     NSString *path = req.URL.path ?: @"";
     LKLog(@"[请求] %@ %@", req.HTTPMethod, req.URL.absoluteString);
     LKLog(@"[请求] 原始 Authorization = %@", [req valueForHTTPHeaderField:@"Authorization"] ?: @"(无)");
+
+    // /v1/report/launchV2：客户端漏发 device.identifier，服务端返回 code=1 参数错误，
+    // 客户端据此判定"设备未启动过"→ 弹「请先打开app」。
+    // 实测服务端必填：device.platform / device.identifier / pos / flag / time_list(map[string]int)
+    if ([self pathMatches:path pattern:@"/v1/report/launchV2"]) {
+        NSData *fixed = [self fixLaunchReport:req.HTTPBody];
+        if (fixed) {
+            req.HTTPBody = fixed;
+            [req setValue:[NSString stringWithFormat:@"%lu", (unsigned long)fixed.length]
+                forHTTPHeaderField:@"Content-Length"];
+            LKLog(@"[launch] 已补全 launchV2 请求体 (%luB)", (unsigned long)fixed.length);
+        } else {
+            LKLog(@"[launch] launchV2 改写失败，原样转发");
+        }
+        [self forward:req];
+        return;
+    }
 
     if ([path hasPrefix:@"/v1/chat/"]) {
         // 关键：每次超会说请求都用全新访客账号（每号仅 3 次额度）
@@ -282,6 +301,60 @@ static NSMutableSet *gSeenHosts = nil;
         if ([ca isKindOfClass:[NSArray class]]) cm[@"AINeedLogin"] = @[];
     }
     if (o[@"isGuestLogin"] != nil) o[@"isGuestLogin"] = @YES;
+}
+
+#pragma mark - launchV2 请求体修复
+
+// 补齐 /v1/report/launchV2 的必填字段。
+// 客户端原请求缺 device.identifier，服务端校验失败返回 code=1，
+// 客户端据此认为设备未上报启动，弹出「请先打开app」门禁。
+- (NSData *)fixLaunchReport:(NSData *)body {
+    NSMutableDictionary *root = nil;
+    if (body.length > 0) {
+        id o = [NSJSONSerialization JSONObjectWithData:body options:NSJSONReadingMutableContainers error:nil];
+        if ([o isKindOfClass:[NSDictionary class]]) root = o;
+    }
+    if (!root) root = [NSMutableDictionary dictionary];
+
+    // device：platform 与 identifier 都是 string 类型（服务端为 Go，类型不符会报错）
+    NSMutableDictionary *dev = nil;
+    id d0 = root[@"device"];
+    if ([d0 isKindOfClass:[NSDictionary class]]) dev = d0;
+    else { dev = [NSMutableDictionary dictionary]; root[@"device"] = dev; }
+    if (![dev[@"platform"] isKindOfClass:[NSString class]] || [dev[@"platform"] length] == 0)
+        dev[@"platform"] = @"1";
+    if (![dev[@"identifier"] isKindOfClass:[NSString class]] || [dev[@"identifier"] length] == 0)
+        dev[@"identifier"] = [self stableDeviceIdentifier];
+
+    // pos / flag：string
+    if (![root[@"pos"] isKindOfClass:[NSString class]]) root[@"pos"] = @"1";
+    if (![root[@"flag"] isKindOfClass:[NSString class]]) root[@"flag"] = @"1";
+
+    // time_list：map[string]int，键为 yyyy-MM-dd，值非 0
+    id tl = root[@"time_list"];
+    if (![tl isKindOfClass:[NSDictionary class]] || [tl count] == 0) {
+        NSDateFormatter *f = [[NSDateFormatter alloc] init];
+        f.dateFormat = @"yyyy-MM-dd";
+        f.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+        root[@"time_list"] = @{ [f stringFromDate:[NSDate date]]: @1 };
+    }
+    return [NSJSONSerialization dataWithJSONObject:root options:0 error:nil];
+}
+
+// 生成稳定的设备标识：优先复用 App 自己存的值，保证多次上报一致
+- (NSString *)stableDeviceIdentifier {
+    static NSString *cached = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+        NSString *k = @"com.kb.devicename";
+        NSString *v = [ud stringForKey:k];
+        if (![v isKindOfClass:[NSString class]] || v.length < 8) {
+            v = [[NSUUID UUID] UUIDString];
+        }
+        cached = v;
+    });
+    return cached;
 }
 
 #pragma mark - 工具
