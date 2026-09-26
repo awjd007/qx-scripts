@@ -1,7 +1,6 @@
 #import "LKLogin.h"
 #import "LKLog.h"
 #import <objc/runtime.h>
-#import <UIKit/UIKit.h>
 
 // 需要伪造/拦截的登录态键
 static NSString *const kKeyShareAccount = @"com.kb.shareaccount";
@@ -383,15 +382,9 @@ static BOOL hk_showMemberVC(id self, SEL _cmd) {
 //     SeekLoveKeyboard.KeyboardManager     .isGuest / .isNeedBind
 //     SeekLoveKeyboard.KBKcbViewController .isNeedBind   ← 开场白控制器自带一份
 //
-//   提示视图（有 ObjC 方法，可 hook）：
-//     -[SeekLoveKeyboard.KBLoginHintView initWithFrame:]
-//     -[SeekLoveKeyboard.KBLoginHintView initWithCoder:]
-//     -[SeekLoveKeyboard.KBLoginHintView layoutSubviews]
-//     文案「请先绑定账号 / 为了您的账户安全」就在这个视图里。
-//
-// 策略：双管齐下
-//   1) hook 提示视图的 init/layoutSubviews —— 让它不显示（治标但立即可见）
-//   2) hook 判断所在类的 init —— 实例创建后把 isNeedBind/isGuest ivar 写成 false
+// 策略：只修正状态，绝不触碰任何视图/UI。
+//    hook 上述类的 init，实例创建后把 isNeedBind / isGuest 的 ivar 写成 false，
+//    使客户端的登录判断自然通过。界面表现完全保持原样。
 
 static NSMutableDictionary *gInitRules = nil;   // "类名|选择子" -> @{orig, rules}
 
@@ -476,41 +469,20 @@ static id LKInitFrameHook(id self, SEL _cmd, CGRect frame) {
 + (void)installManagerHooks {
     Class km  = [self findSwiftClassByName:@"KeyboardManager"];
     Class kcb = [self findSwiftClassByName:@"KBKcbViewController"];
-    Class hint = [self findSwiftClassByName:@"KBLoginHintView"];
 
-    LKLog(@"[login] 类查找: KeyboardManager=%s KBKcb=%@ KBLoginHint=%@",
+    LKLog(@"[login] 类查找: KeyboardManager=%s KBKcb=%@",
           km ? class_getName(km) : "(nil)",
-          kcb ? NSStringFromClass(kcb) : @"(nil)",
-          hint ? NSStringFromClass(hint) : @"(nil)");
+          kcb ? NSStringFromClass(kcb) : @"(nil)");
 
     [self dumpTargetIvars:km  tag:@"KeyboardManager"];
     [self dumpTargetIvars:kcb tag:@"KBKcbViewController"];
 
-    // 1) 改写门禁 ivar
+    // 1) 改写门禁 ivar（只改状态，不动任何 UI）
     [self hookInitNoArg:km  ivar:@"_isNeedBind" value:@NO];
     [self hookInitNoArg:km  ivar:@"_isGuest"    value:@NO];
     [self hookInitNoArg:kcb ivar:@"_isNeedBind" value:@NO];
 
-    // 2) 拦掉提示视图：让 KBLoginHintView 一创建就隐藏
-    if (hint) {
-        // initWithFrame:
-        SEL sf = sel_registerName("initWithFrame:");
-        Method mf = class_getInstanceMethod(hint, sf);
-        if (mf) {
-            IMP o = method_getImplementation(mf);
-            [self registerInitRule:@{@"ivar": @"", @"value": @NO} forClass:hint sel:sf orig:o];
-            method_setImplementation(mf, (IMP)LKInitFrameHook);
-            LKLog(@"[login] hook KBLoginHintView.initWithFrame: 成功");
-        }
-        // layoutSubviews：每次布局都强制隐藏，兜住其它创建路径
-        SEL sl = sel_registerName("layoutSubviews");
-        Method ml = class_getInstanceMethod(hint, sl);
-        if (ml) {
-            gOrigHintLayout = method_getImplementation(ml);
-            method_setImplementation(ml, (IMP)LKHintLayoutHook);
-            LKLog(@"[login] hook KBLoginHintView.layoutSubviews 成功");
-        }
-    }
+    // 明确：不 hook 任何 UIView 子类，不修改任何界面表现。
 }
 
 + (void)hookInitNoArg:(Class)cls ivar:(NSString *)ivar value:(NSNumber *)value {
@@ -522,19 +494,6 @@ static id LKInitFrameHook(id self, SEL _cmd, CGRect frame) {
     [self registerInitRule:@{@"ivar": ivar, @"value": value} forClass:cls sel:s orig:o];
     method_setImplementation(m, (IMP)LKInitNoArgHook);
     LKLog(@"[login] hook %@.init → %@=%@", NSStringFromClass(cls), ivar, value);
-}
-
-// 提示视图布局时隐藏自身
-static IMP gOrigHintLayout = NULL;
-static void LKHintLayoutHook(id self, SEL _cmd) {
-    if (gOrigHintLayout) ((void (*)(id, SEL))gOrigHintLayout)(self, _cmd);
-    if ([self isKindOfClass:[UIView class]]) {
-        UIView *v = (UIView *)self;
-        if (!v.hidden) {
-            v.hidden = YES;
-            LKLog(@"[login] 已隐藏登录提示视图 %@", NSStringFromClass([self class]));
-        }
-    }
 }
 
 // 打印运行时里所有名字含关键字的类，用于确认目标类是否可达

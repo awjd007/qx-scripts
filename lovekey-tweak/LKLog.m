@@ -95,15 +95,25 @@ void LKLog(NSString *fmt, ...) {
     snprintf(tsbuf, sizeof(tsbuf), "%02d:%02d:%02d.%03d",
              tmv.tm_hour, tmv.tm_min, tmv.tm_sec, (int)(tv.tv_usec / 1000));
 
-    // 进程名同样可能触发 Foundation 内部逻辑，失败时退化为 pid
-    const char *proc = "?";
+    // 进程名同样可能触发 Foundation 内部逻辑，失败时退化为 "?"
+    char procbuf[64];
+    procbuf[0] = '?';
+    procbuf[1] = '\0';
     @try {
         NSString *pn = [[NSProcessInfo processInfo] processName];
-        if (pn.length) proc = pn.UTF8String ?: "?";
-    } @catch (NSException *e) { proc = "?"; }
+        if (pn.length) {
+            const char *u = pn.UTF8String;
+            if (u) { strncpy(procbuf, u, sizeof(procbuf) - 1); procbuf[sizeof(procbuf) - 1] = '\0'; }
+        }
+    } @catch (NSException *e) { }
 
-    NSString *line = [NSString stringWithFormat:@"[LK %s][%s pid=%d] %@\n",
-                      tsbuf, proc, getpid(), msg];
+    // 每行都带构建版本号。
+    // 必要性：键盘进程通常在 syslog 抓取开始之前就已启动，构造函数的
+    // "=== LovekeyTweak 启动 (build=...) ===" 那行永远看不到，
+    // 导致无法确认设备上实际运行的是哪一版 dylib，反复误判。
+    // 把版本放进行前缀后，任意一条日志都能立刻确认版本。
+    NSString *line = [NSString stringWithFormat:@"[LK %s][%s][%s pid=%d] %@\n",
+                      LK_TWEAK_BUILD, tsbuf, procbuf, getpid(), msg];
 
     // 通道 1：syslog（public 格式，避免被隐私脱敏成 <private>）
     os_log_with_type(OS_LOG_DEFAULT, OS_LOG_TYPE_DEFAULT, "%{public}s", line.UTF8String);
@@ -112,6 +122,12 @@ void LKLog(NSString *fmt, ...) {
     os_unfair_lock_lock(&gLock);
     LKWriteFile(line);
     os_unfair_lock_unlock(&gLock);
+}
+
+// 版本心跳：主动打印一次版本号。
+// 用于在无法看到进程启动日志时确认注入是否生效、跑的是哪个版本。
+void LKLogHeartbeat(void) {
+    LKLog(@"### 版本心跳 build=%s ###", LK_TWEAK_BUILD);
 }
 
 void LKLogEnvironment(void) {

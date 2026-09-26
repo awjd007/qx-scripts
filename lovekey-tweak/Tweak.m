@@ -81,5 +81,16 @@ static void LKInit(void) {
         }
 
         LKLog(@"=== LovekeyTweak 初始化完成 ===");
+
+        // 版本心跳：构造函数里的日志常常因为抓取尚未挂上而丢失，
+        // 这里额外安排在主线程稍后打印一次（并隔一段时间再打一次），
+        // 确保任何时间挂上 syslog 都能确认设备实际运行的版本。
+        void (^beat)(void) = ^{ LKLogHeartbeat(); };
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), beat);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(60 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), beat);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(180 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), beat);
     }
 }

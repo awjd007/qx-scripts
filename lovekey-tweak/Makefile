@@ -17,7 +17,7 @@ include $(THEOS)/makefiles/common.mk
 TWEAK_NAME = LovekeyTweak
 LovekeyTweak_FILES = Tweak.m LKLog.m LKCrypto.m LKAccount.m LKLogin.m LKURLProtocol.m
 LovekeyTweak_CFLAGS = -fobjc-arc -w -O2
-LovekeyTweak_FRAMEWORKS = Foundation UIKit
+LovekeyTweak_FRAMEWORKS = Foundation
 # 关键：纯 runtime 实现，不依赖 substrate。
 # -dead_strip_dylibs 剔除未使用的 dylib 依赖，保证 TrollFools 环境能加载。
 LovekeyTweak_LDFLAGS = -Wl,-dead_strip_dylibs
