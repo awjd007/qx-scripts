@@ -9,9 +9,9 @@ Depends: firmware (>= 14.0)
 Priority: optional
 Maintainer: awjd007
 Author: awjd007
-Installed-Size: 272
+Installed-Size: 288
 Filename: ./com.awjd007.lovekeytweak_1.1.0_iphoneos-arm64e.deb
-Size: 31234
-MD5sum: 74633915919c9b8ee3853fc327e59ea7
-SHA1: 77d636766445701071a476c55fb3bc38695ebff6
-SHA256: cd92698ed4f7fd7ae5cc38cf5087832079b90fae27087b791cd80d18d5307ba4
+Size: 33040
+MD5sum: 82ecde2dccd257ca9cc404f935fa8f39
+SHA1: 5f99fa197932d86c6da9f83f83fb258d0c6042f5
+SHA256: 67a2e0e1523c3d1c573781e6dd87f3f06023017639fb2b3ed458a63efa5a5662
