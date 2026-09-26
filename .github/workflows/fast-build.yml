@@ -41,21 +41,36 @@ jobs:
 
       - name: Build dylib
         run: |
-          set -e
           cd lovekey-tweak
-          make clean >/dev/null 2>&1 || true
-          # 只编译 dylib，不打包 deb（deb 打包要走 dpkg-deb，最耗时）
-          make stage2 2>&1 | tail -30 || make 2>&1 | tail -30
+          make clean || true
+          set +e
+          make package FINALPACKAGE=1 > /tmp/build.log 2>&1
+          RC=$?
+          echo "---- 编译日志末尾 ----"
+          tail -60 /tmp/build.log
+          echo "---- 结束 ----"
+          if [ $RC -ne 0 ]; then
+            # 把完整日志落盘并提交，便于在无法查看 Actions 日志时定位
+            mkdir -p ../dist
+            cp /tmp/build.log ../dist/build-log.txt
+            echo "::error::编译失败(rc=$RC)，完整日志已写入 dist/build-log.txt"
+            exit 1
+          fi
+          # 成功后也留一份精简日志，便于确认实际编译了哪些文件
+          mkdir -p ../dist
+          grep -E "Compiling|Linking|error:|warning: unused" /tmp/build.log | tail -40 > ../dist/build-log.txt || true
+          if [ ! -s ../dist/build-log.txt ]; then echo "(无编译行，写入完整日志)" > ../dist/build-log.txt; tail -40 /tmp/build.log >> ../dist/build-log.txt; fi
           mkdir -p /tmp/out
           find .theos -name '*.dylib' -exec cp {} /tmp/out/ \;
+          echo "--- 产物 ---"
           ls -la /tmp/out/
 
       - name: Verify
         run: |
-          set -e
           DY=$(ls /tmp/out/*.dylib | head -1)
+          if [ -z "$DY" ]; then echo "::error::没有找到 dylib"; exit 1; fi
           ls -la "$DY"
-          # 快速语法级校验：确认关键新代码在产物里
+          # 确认新代码真的编进去了
           for s in "protocolClasses" "LovekeyTweak"; do
             if strings "$DY" | grep -q "$s"; then
               echo "OK: $s"
@@ -82,7 +97,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f dist/lovekey-tweak/LovekeyTweak.dylib
+          git add -f dist/lovekey-tweak/LovekeyTweak.dylib 2>/dev/null || true
+          git add -f dist/build-log.txt 2>/dev/null || true
           git commit -m "ci: fast build [skip ci]" || true
           git pull --rebase origin main || true
           git push || true
