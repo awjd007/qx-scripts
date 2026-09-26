@@ -49,12 +49,12 @@ jobs:
           ls -la "$BIN"
 
           # 1) 头部与依赖
-          otool -hv "$BIN" > "$OUT/1-header.txt" 2>&1 || true
-          otool -L  "$BIN" > "$OUT/2-dylibs.txt" 2>&1 || true
+          xcrun otool -hv "$BIN" > "$OUT/1-header.txt" 2>&1 || true
+          xcrun otool -L  "$BIN" > "$OUT/2-dylibs.txt" 2>&1 || true
 
           # 2) Swift 符号表（关键）：还原模块内方法名
-          nm -arch arm64 "$BIN" 2>/dev/null | grep "SeekLoveKeyboard" \
-            | swift-demangle > "$OUT/3-swift-symbols.txt" 2>&1 || true
+          xcrun nm -arch arm64 "$BIN" 2>/dev/null | grep "SeekLoveKeyboard" \
+            | xcrun swift-demangle > "$OUT/3-swift-symbols.txt" 2>&1 || true
           echo "Swift 符号数: $(wc -l < "$OUT/3-swift-symbols.txt")"
 
           # 3) 登录相关符号
@@ -70,7 +70,7 @@ jobs:
           head -20 "$OUT/5-hint-strings.txt" || true
 
           # 5) 反汇编：全量存临时文件后，仅导出含登录关键字的函数块
-          otool -arch arm64 -tV "$BIN" > /tmp/disasm.txt 2>&1 || true
+          xcrun otool -arch arm64 -tV "$BIN" > /tmp/disasm.txt 2>&1 || true
           echo "反汇编总行数: $(wc -l < /tmp/disasm.txt)"
 
           python3 - <<'PYEOF' > "$OUT/6-disasm-login.txt" 2>&1 || true
