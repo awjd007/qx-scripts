@@ -22,4 +22,10 @@
 // 是否为需要伪造的登录态键
 + (BOOL)isLoginKey:(NSString *)key;
 
+// 把伪造值与 App Group 共享域同步
++ (void)syncToGroupForKey:(NSString *)key value:(id)value;
+
+// 启动时主动写入全套伪造登录态（standard + App Group）
++ (void)seedLoginState;
+
 @end
