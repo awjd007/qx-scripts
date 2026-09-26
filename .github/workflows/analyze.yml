@@ -13,6 +13,11 @@ on:
         description: '要分析的目标（appex / main / both）'
         required: false
         default: 'appex'
+  # 改动分析脚本或目标二进制时自动跑，省去手动点 Run workflow
+  push:
+    paths:
+      - 'analysis/**'
+      - '.github/workflows/analyze.yml'
 
 jobs:
   analyze:
@@ -35,23 +40,58 @@ jobs:
 
       - name: 分析 appex
         run: |
-          set -x
           BIN=analysis/bin/SeekLoveKeyboard
           OUT=analysis/out
           mkdir -p "$OUT"
+
+          echo "### 目标信息"
           file "$BIN"
           ls -la "$BIN"
 
-          # 1) 基本信息
-          otool -hv "$BIN"            > "$OUT/1-header.txt"            2>&1 || true
-          otool -l  "$BIN"            > "$OUT/2-loadcommands.txt"     2>&1 || true
+          # 1) 头部与依赖
+          otool -hv "$BIN" > "$OUT/1-header.txt" 2>&1 || true
+          otool -L  "$BIN" > "$OUT/2-dylibs.txt" 2>&1 || true
 
-          # 2) 依赖与 rpath
-          otool -L "$BIN"             > "$OUT/3-dylibs.txt"           2>&1 || true
-          otool -l "$BIN" | grep -A2 LC_RPATH > "$OUT/4-rpath.txt"    2>&1 || true
+          # 2) Swift 符号表（关键）：还原模块内方法名
+          nm -arch arm64 "$BIN" 2>/dev/null | grep "SeekLoveKeyboard" \
+            | swift-demangle > "$OUT/3-swift-symbols.txt" 2>&1 || true
+          echo "Swift 符号数: $(wc -l < "$OUT/3-swift-symbols.txt")"
 
-          echo "=== 分析完成 ==="
+          # 3) 登录相关符号
+          grep -iE "login|guest|bind|member|vip|auth|account" "$OUT/3-swift-symbols.txt" \
+            | sort -u > "$OUT/4-login-symbols.txt" 2>&1 || true
+          echo "登录相关符号数: $(wc -l < "$OUT/4-login-symbols.txt")"
+          head -40 "$OUT/4-login-symbols.txt" || true
+
+          # 4) 提示文案与偏移
+          strings -a -t x "$BIN" > /tmp/strs.txt 2>/dev/null || true
+          grep -E "绑定|未登录|登录超时|请先|guest" /tmp/strs.txt \
+            > "$OUT/5-hint-strings.txt" 2>&1 || true
+          head -20 "$OUT/5-hint-strings.txt" || true
+
+          # 5) 反汇编：全量存临时文件后，仅导出含登录关键字的函数块
+          otool -arch arm64 -tV "$BIN" > /tmp/disasm.txt 2>&1 || true
+          echo "反汇编总行数: $(wc -l < /tmp/disasm.txt)"
+
+          python3 - <<'PYEOF' > "$OUT/6-disasm-login.txt" 2>&1 || true
+          import re
+          KEY = re.compile(r'绑定|未登录|登录超时|isNeedBind|isGuest|LoginHint|loginHint|showLogin|Guest')
+          out, cur, keep = [], [], False
+          with open('/tmp/disasm.txt', encoding='utf-8', errors='replace') as f:
+              for line in f:
+                  if line[:1] not in ' \t' and cur:
+                      if keep: out.append(''.join(cur))
+                      cur, keep = [], False
+                  cur.append(line)
+                  if KEY.search(line): keep = True
+              if cur and keep: out.append(''.join(cur))
+          print(''.join(out))
+          PYEOF
+          echo "登录相关反汇编行数: $(wc -l < "$OUT/6-disasm-login.txt")"
+
+          echo "=== 完成 ==="
           ls -la "$OUT"
+          du -sh "$OUT"
 
       - name: 提交分析结果
         if: always()
