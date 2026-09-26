@@ -470,14 +470,15 @@ static id LKInitFrameHook(id self, SEL _cmd, CGRect frame) {
     Class km  = [self findSwiftClassByName:@"KeyboardManager"];
     Class kcb = [self findSwiftClassByName:@"KBKcbViewController"];
 
-    LKLog(@"[login] 类查找: KeyboardManager=%s KBKcb=%@",
+    LKLog(@"[login] 类查找: KeyboardManager=%s KBKcb=%s",
           km ? class_getName(km) : "(nil)",
-          kcb ? NSStringFromClass(kcb) : @"(nil)");
+          kcb ? class_getName(kcb) : "(nil)");
 
+    // 打印目标 ivar 的真实名字/类型/偏移 —— 这是判断能否改写的唯一依据
     [self dumpTargetIvars:km  tag:@"KeyboardManager"];
     [self dumpTargetIvars:kcb tag:@"KBKcbViewController"];
 
-    // 1) 改写门禁 ivar（只改状态，不动任何 UI）
+    // 只改状态：实例创建后把门禁 ivar 置 0，界面不受任何影响
     [self hookInitNoArg:km  ivar:@"_isNeedBind" value:@NO];
     [self hookInitNoArg:km  ivar:@"_isGuest"    value:@NO];
     [self hookInitNoArg:kcb ivar:@"_isNeedBind" value:@NO];
@@ -490,10 +491,24 @@ static id LKInitFrameHook(id self, SEL _cmd, CGRect frame) {
     SEL s = sel_registerName("init");
     Method m = class_getInstanceMethod(cls, s);
     if (!m) { LKLog(@"[login] %@ 无 init", NSStringFromClass(cls)); return; }
+
+    // 幂等：重试时若已挂过就不再重复替换（避免 hook 叠加导致递归）
+    NSString *key = [NSString stringWithFormat:@"%s|%s", class_getName(cls), sel_getName(s)];
+    static NSMutableSet *done = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ done = [NSMutableSet set]; });
+    if ([done containsObject:key]) return;
+
     IMP o = method_getImplementation(m);
     [self registerInitRule:@{@"ivar": ivar, @"value": value} forClass:cls sel:s orig:o];
     method_setImplementation(m, (IMP)LKInitNoArgHook);
-    LKLog(@"[login] hook %@.init → %@=%@", NSStringFromClass(cls), ivar, value);
+    [done addObject:key];
+
+    // 同时确认该 ivar 确实存在（不存在就说明名字不对，需要看 dump 输出调整）
+    Ivar iv = class_getInstanceVariable(cls, ivar.UTF8String);
+    LKLog(@"[login] hook %@.init → %@=%@ (ivar%@, type=%s)",
+          NSStringFromClass(cls), ivar, value, iv ? @"存在" : @"不存在",
+          iv ? (ivar_getTypeEncoding(iv) ?: "?") : "-");
 }
 
 // 打印运行时里所有名字含关键字的类，用于确认目标类是否可达
@@ -516,26 +531,35 @@ static id LKInitFrameHook(id self, SEL _cmd, CGRect frame) {
     free(classes);
 }
 
-// 在运行时全部类里按「简单类名」或「Swift 运行时名后缀」查找
+// 在运行时全部类里按「Swift 运行时名」精确查找。
+// 关键教训：不能用 hasSuffix 模糊匹配 —— 曾因此命中了第三方库的
+// QMUIKeyboardManager 而错过真正的 SeekLoveKeyboard.KeyboardManager。
+// 这里按优先级：完全相等 → "SeekLoveKeyboard." 前缀 → "_TtC16SeekLoveKeyboard" 前缀。
 + (Class)findSwiftClassByName:(NSString *)simpleName {
     int count = objc_getClassList(NULL, 0);
     if (count <= 0) return Nil;
     Class *classes = (Class *)malloc(sizeof(Class) * (size_t)count);
     if (!classes) return Nil;
     count = objc_getClassList(classes, count);
-    Class found = Nil;
+
+    NSString *dotted = [@"SeekLoveKeyboard." stringByAppendingString:simpleName];
+    NSString *mangledPrefix = @"_TtC16SeekLoveKeyboard";
+
+    Class exact = Nil, dottedHit = Nil, mangledHit = Nil;
     for (int i = 0; i < count; i++) {
         const char *nm = class_getName(classes[i]);
         if (!nm) continue;
         NSString *s = [NSString stringWithUTF8String:nm];
-        // 匹配 "KeyboardManager" 或 "...KeyboardManager"（Swift 运行时名结尾）
-        if ([s isEqualToString:simpleName] || [s hasSuffix:simpleName]) {
-            found = classes[i];
-            break;
+        if ([s isEqualToString:dotted]) { dottedHit = classes[i]; break; }   // 最优先
+        if ([s isEqualToString:simpleName]) { if (!exact) exact = classes[i]; }
+        if (!mangledHit && [s hasPrefix:mangledPrefix] && [s hasSuffix:simpleName]) {
+            mangledHit = classes[i];
         }
     }
     free(classes);
-    return found;
+    if (dottedHit) return dottedHit;
+    if (exact) return exact;
+    return mangledHit;
 }
 
 + (void)install {
@@ -585,6 +609,16 @@ static id LKInitFrameHook(id self, SEL _cmd, CGRect frame) {
         [self installManagerHooks];
     } @catch (NSException *e) {
         LKLog(@"[login] !! installManagerHooks 抛异常: %@", e.reason);
+    }
+
+    // 部分 Swift 类在构造函数执行时可能尚未注册到 ObjC 运行时
+    // （实测 KBKcbViewController 首轮查找返回 nil）。
+    // 这里在稍后重试几次，确保目标类一旦就绪就立刻挂上 hook。
+    for (int i = 1; i <= 3; i++) {
+        int64_t delay = (int64_t)(i * 2 * NSEC_PER_SEC);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, delay), dispatch_get_main_queue(), ^{
+            [LKLogin installManagerHooks];
+        });
     }
 
     LKLog(@"[login] install 全部完成");
