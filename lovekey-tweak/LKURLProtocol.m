@@ -76,9 +76,25 @@ static NSMutableSet *gSeenHosts = nil;
             }
             [self forwardStreaming:req];   // SSE 流式，不能缓冲
         }];
-    } else {
-        [self forward:req];
+        return;
     }
+
+    // 鉴权分层：/v1/chat/* 每条换新账号（上面已 return）；
+    // 其它接口复用缓存 token —— 它们频繁轮询，若也每次新建账号会造成请求风暴，
+    // 且服务端对新账号返回 code=1200「用户未登录或登录超时」，
+    // 客户端据此弹「请先打开 App」并把 VIP 判为非会员。
+    __weak typeof(self) weakSelf = self;
+    [LKAccount ensureToken:^(NSString *token) {
+        __strong typeof(weakSelf) self = weakSelf;
+        if (!self) return;
+        if (token.length > 0) {
+            [req setValue:[@"Bearer " stringByAppendingString:token] forHTTPHeaderField:@"Authorization"];
+            LKLog(@"[auth] %@ 已带 token=%@@...", path, [token substringToIndex:MIN(12, token.length)]);
+        } else {
+            LKLog(@"[auth] !! token 获取失败 %@", path);
+        }
+        [self forward:req];
+    }];
 }
 
 - (void)stopLoading {
@@ -153,6 +169,20 @@ static NSMutableSet *gSeenHosts = nil;
                 return;
             }
             LKLog(@"[响应] status=%ld bytes=%lu path=%@", (long)code, (unsigned long)data.length, req.URL.path);
+
+            // token 失效（HTTP 401 / 业务码 1200）时清缓存，下次请求自动重新注册访客
+            if (code == 401) {
+                [LKAccount invalidateToken];
+            } else if (data.length > 0 && data.length < 4096) {
+                id o = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+                if ([o isKindOfClass:[NSDictionary class]]) {
+                    id c = o[@"code"];
+                    if ([c respondsToSelector:@selector(integerValue)] && [c integerValue] == 1200) {
+                        [LKAccount invalidateToken];
+                    }
+                }
+            }
+
             NSData *patched = [self transformForURL:req.URL data:data];
             NSData *out = patched ?: data;
             LKLog(@"[响应] 改写=%@ (%lu -> %lu bytes)", patched ? @"已改写" : @"未改动",
@@ -180,6 +210,18 @@ static NSMutableSet *gSeenHosts = nil;
     }
     NSMutableDictionary *wrapped = obj;
     BOOL isV1 = [path hasPrefix:@"/v1/"];
+
+    // 服务端返回业务错误码（如 1200 未登录、10001 次数用完）时 data 往往是空字典 {}。
+    // 此时注入会员字段会把 66 字节的错误响应撑大成 751 字节的畸形数据，
+    // 客户端解析后走异常分支（弹「请先打开 App」）。正确做法是原样放行。
+    id codeObj = wrapped[@"code"];
+    NSInteger bizCode = [codeObj respondsToSelector:@selector(integerValue)] ? [codeObj integerValue] : 0;
+    if (bizCode != 0) {
+        LKLog(@"[改写] path=%@ 业务错误码=%ld (%@)，原样放行不注入",
+              path, (long)bizCode, wrapped[@"message"] ?: @"");
+        return nil;
+    }
+
     id d0 = wrapped[@"data"];
     LKLog(@"[改写] path=%@ isV1=%@ dataType=%@", path, isV1 ? @"Y" : @"N",
           [d0 isKindOfClass:[NSString class]] ? @"string(加密)" :
