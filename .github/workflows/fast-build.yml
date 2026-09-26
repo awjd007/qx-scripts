@@ -15,6 +15,14 @@ on:
     paths:
       - 'lovekey-tweak/**'
 
+# 与 build-lovekey-tweak.yml 同时监听 lovekey-tweak/** 会并行触发，
+# 两者都会向 dist/ 写 LovekeyTweak.dylib，后完成的覆盖前面的，产物不可控。
+# 这里用 concurrency 让 fast-build 取消同分支上仍在跑的旧 run，
+# 并确保它最终写入的是本次改动对应的产物。
+concurrency:
+  group: lovekey-tweak-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: macos-14

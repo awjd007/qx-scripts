@@ -1,10 +1,12 @@
 name: Build LovekeyTweak
 
+# 完整构建（含 rootless / roothide deb、APT 源索引、GitHub Release）。
+# 只在手动触发或改动工作流自身时运行 —— 日常迭代走 fast-build.yml，
+# 否则两者同时向 dist/ 写入会互相覆盖，产物不可控。
 on:
   workflow_dispatch:
   push:
     paths:
-      - 'lovekey-tweak/**'
       - '.github/workflows/build-lovekey-tweak.yml'
 
 jobs:
