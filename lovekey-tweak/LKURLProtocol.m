@@ -265,6 +265,12 @@ static NSMutableSet *gSeenHosts = nil;
     if (!m[@"phone"]) m[@"phone"] = @"13800000000";
     m[@"has_password"] = @YES;
     m[@"third_party_bound"] = @YES;
+    // 服务端 /v1/account 实测返回：字段存在但为 null/0 时客户端判为非会员，
+    // 下面几项一并改写，保证"会员/绑定"判定一致通过。
+    if (!m[@"avatar"]) m[@"avatar"] = @"";
+    if (!m[@"name"]) m[@"name"] = @"baby";
+    m[@"is_guided"] = @1;
+    m[@"is_notice"] = @2;
     // 服务端 /v1/account 实测返回这些 guest 相关字段，客户端据此判定"请先绑定账号"，
     // 必须一并改写，否则仅改 guest 仍会被本地缓存判定为游客。
     if (!m[@"guest_positive_at"]) m[@"guest_positive_at"] = @"2026-09-26 00:00:00";
@@ -285,9 +291,16 @@ static NSMutableSet *gSeenHosts = nil;
     id u = d[@"user"];
     if ([u isKindOfClass:[NSDictionary class]]) {
         NSMutableDictionary *um = u;
+        // 服务端 /v1/account/vip 实测 user 结构为:
+        //   {"perpetual_vip":0,"member_vip":0,"vip_expired_at":""}
+        // 客户端右上角头像/会员标识读的就是这几个字段（0=非会员）。
+        um[@"perpetual_vip"] = @1;
+        um[@"member_vip"] = @2;
+        um[@"vip_expired_at"] = @"3742732800";
+        // 原作者脚本用的 hy_* 别名，一并保留以防其它机型版本读取
         um[@"perpetual_hy"] = @1;
         um[@"member_hy"] = @1;
-        if (!um[@"hy_expired_at"]) um[@"hy_expired_at"] = @"3742732800";
+        um[@"hy_expired_at"] = @"3742732800";
     }
 }
 
@@ -299,6 +312,31 @@ static NSMutableSet *gSeenHosts = nil;
         NSMutableDictionary *cm = conf;
         id ca = cm[@"AINeedLogin"];
         if ([ca isKindOfClass:[NSArray class]]) cm[@"AINeedLogin"] = @[];
+
+        // conf 内的门禁与会员开关（服务端实测字段名）：
+        //   ios_keyboard_login_statue = [{"version":"1.7.1","status":"0"}]
+        //     status "0" = 未登录 → 客户端弹「请先打开app」，超会说/开场白全不可用
+        //   ios_member_in_keyboard = "1"   键盘内会员开关
+        //   ios_subscription_manage_type = "2"
+        id st = cm[@"ios_keyboard_login_statue"];
+        if ([st isKindOfClass:[NSArray class]]) {
+            NSMutableArray *arr = [NSMutableArray array];
+            for (id item in (NSArray *)st) {
+                if ([item isKindOfClass:[NSDictionary class]]) {
+                    NSMutableDictionary *d = [item mutableCopy];
+                    d[@"status"] = @"1";
+                    [arr addObject:d];
+                } else {
+                    [arr addObject:item];
+                }
+            }
+            if (arr.count == 0) [arr addObject:@{ @"version": kAppVersion, @"status": @"1" }];
+            cm[@"ios_keyboard_login_statue"] = arr;
+        } else {
+            cm[@"ios_keyboard_login_statue"] = @[ @{ @"version": kAppVersion, @"status": @"1" } ];
+        }
+        cm[@"ios_member_in_keyboard"] = @"1";
+        if (cm[@"ios_subscription_manage_type"] == nil) cm[@"ios_subscription_manage_type"] = @"2";
     }
     if (o[@"isGuestLogin"] != nil) o[@"isGuestLogin"] = @YES;
 }
