@@ -1,0 +1,14 @@
+[0;32m==> [1;39mCompiling Tweak.m (arm64)…[m
+[0;32m==> [1;39mCompiling LKLog.m (arm64)…[m
+[0;32m==> [1;39mCompiling LKCrypto.m (arm64)…[m
+[0;32m==> [1;39mCompiling LKAccount.m (arm64)…[m
+[0;32m==> [1;39mCompiling LKLogin.m (arm64)…[m
+[0;32m==> [1;39mCompiling LKURLProtocol.m (arm64)…[m
+[0;33m==> [1;39mLinking tweak LovekeyTweak (arm64)…[m
+[0;32m==> [1;39mCompiling Tweak.m (arm64e)…[m
+[0;32m==> [1;39mCompiling LKLog.m (arm64e)…[m
+[0;32m==> [1;39mCompiling LKCrypto.m (arm64e)…[m
+[0;32m==> [1;39mCompiling LKAccount.m (arm64e)…[m
+[0;32m==> [1;39mCompiling LKLogin.m (arm64e)…[m
+[0;32m==> [1;39mCompiling LKURLProtocol.m (arm64e)…[m
+[0;33m==> [1;39mLinking tweak LovekeyTweak (arm64e)…[m
