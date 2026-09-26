@@ -387,7 +387,10 @@ static NSMutableSet *gSeenHosts = nil;
         cm[@"ios_member_in_keyboard"] = @"1";
         if (cm[@"ios_subscription_manage_type"] == nil) cm[@"ios_subscription_manage_type"] = @"2";
     }
-    if (o[@"isGuestLogin"] != nil) o[@"isGuestLogin"] = @YES;
+    // 不要改 isGuestLogin：它是客户端渲染「游客/登录」界面分支的依据。
+    // 早前把服务端的 false 强制改成 true，会导致键盘界面切换到游客样式
+    // （用户可见的 UI 变化）。登录态应通过伪造账号数据与门禁状态解决，
+    // 而不是篡改这个渲染开关。
 }
 
 #pragma mark - launchV2 请求体修复
