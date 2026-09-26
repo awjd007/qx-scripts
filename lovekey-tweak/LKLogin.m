@@ -12,6 +12,10 @@ static NSString *const kKeyDevName      = @"com.kb.devicename";
 static NSString *const kMemberIDKey     = @"lktweak.member_id";
 static NSString *const kDeviceIDKey     = @"lktweak.device_id";
 
+// 防重入标志：login 相关的写入（syncToGroupForKey / seedLoginState）内部
+// 会再次触发 setObject:forKey:，没有保护会无限递归导致栈溢出、进程崩溃。
+static __thread BOOL gInLoginWrite = NO;
+
 static IMP gOrigObjectForKey    = NULL;
 static IMP gOrigStringForKey    = NULL;
 static IMP gOrigSetObject       = NULL;
@@ -79,6 +83,8 @@ static NSString *const kAppGroup = @"group.com.cck.lovekey";
 }
 
 + (void)syncToGroupForKey:(NSString *)key value:(id)value {
+    // 保留接口供 seedLoginState 使用；注意调用方必须先置 gInLoginWrite，
+    // 否则 setObject: 会再次进入 hook 形成递归。
     if (!value) return;
     NSUserDefaults *gs = [self groupStore];
     if (!gs) return;
@@ -100,21 +106,20 @@ static NSString *const kAppGroup = @"group.com.cck.lovekey";
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
     NSUserDefaults *gs = [self groupStore];
 
-    void (^put)(NSUserDefaults *, NSString *, id) = ^(NSUserDefaults *store, NSString *k, id v) {
-        if (!store || !v) return;
+    BOOL prev = gInLoginWrite;
+    gInLoginWrite = YES;      // 防止写入过程被自己的 hook 再次拦截
+    for (NSUserDefaults *store in @[ud, gs]) {
+        if (!store) continue;
         @try {
-            [store setObject:v forKey:k];
+            [store setObject:acc        forKey:kKeyShareAccount];
+            [store setObject:token      forKey:kKeyUserToken];
+            [store setObject:@NO        forKey:kKeyIsGuest];
+            [store setObject:accJSON    forKey:kKeyLocalUser];
+            [store setObject:@"iPhone"  forKey:kKeyDevName];
             [store synchronize];
         } @catch (NSException *e) {}
-    };
-
-    for (NSUserDefaults *store in @[ud, gs]) {
-        put(store, kKeyShareAccount, acc);
-        put(store, kKeyUserToken, token);
-        put(store, kKeyIsGuest, @NO);
-        put(store, kKeyLocalUser, accJSON);
-        put(store, kKeyDevName, @"iPhone");
     }
+    gInLoginWrite = prev;
     LKLog(@"[login] 已向 standard + %@ 写入伪造登录态", kAppGroup);
 }
 
@@ -253,12 +258,20 @@ static id hk_valueForKey(id self, SEL _cmd, NSString *key) {
     return ((id (*)(id, SEL, id))gOrigValueForKey)(self, _cmd, key);
 }
 
+// 防重入：syncToGroupForKey / seedLoginState 内部会再次调用 setObject:forKey:，
+// 若不做保护会形成无限递归（hk_setObject → syncToGroupForKey → hk_setObject …）
+// 导致栈溢出、键盘进程崩溃（表现为切换键盘闪退）。
 static void hk_setObject(id self, SEL _cmd, id value, NSString *key) {
+    if (gInLoginWrite) {
+        ((void (*)(id, SEL, id, id))gOrigSetObject)(self, _cmd, value, key);
+        return;
+    }
     if ([[LKLogin class] isLoginKey:key]) {
-        // 关键：不能丢弃写入。
-        // 客户端 UserManager 是单例，它把「自己写入的值」当作登录态来源，
+        // 不能丢弃写入：客户端 UserManager 是单例，把自己写入的值当登录态来源，
         // 丢弃后它读到 nil/旧值 → 判定游客 → 弹「请先绑定账号」。
-        // 正确做法：把写入值替换成伪造会员态，并保持类型一致。
+        // 做法：把写入值就地替换为同类型的伪造会员态。
+        // 不再额外写 group 域 —— 客户端写共享域时走的也是本方法，已被覆盖；
+        // 额外写入会形成递归（本方法 → syncToGroupForKey → 本方法）导致崩溃。
         id fake = nil;
         if ([value isKindOfClass:[NSString class]]) {
             fake = [[LKLogin class] fakeAccountJSON];
@@ -268,10 +281,9 @@ static void hk_setObject(id self, SEL _cmd, id value, NSString *key) {
             fake = [[LKLogin class] fakeValueForKey:key];
         }
         if (fake) {
-            LKLog(@"[login] 替换写 %@ → 伪造会员态", key);
+            gInLoginWrite = YES;
             ((void (*)(id, SEL, id, id))gOrigSetObject)(self, _cmd, fake, key);
-            // 同步写一份到 App Group 共享域，保证主 App 与 appex 读到一致
-            [[LKLogin class] syncToGroupForKey:key value:fake];
+            gInLoginWrite = NO;
             return;
         }
     }
