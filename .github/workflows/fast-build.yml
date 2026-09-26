@@ -1,0 +1,89 @@
+name: Fast Tweak Build
+
+# 极速构建：只编译一次默认方案（arm64+arm64e fat dylib），
+# 跳过 rootless/roothide deb、跳过 APT 索引、跳过 release 发布。
+# 目的：迭代调试时把等待时间从 ~5 分钟压到 ~1.5 分钟。
+#
+# 触发方式：
+#   - push 到 lovekey-tweak/ 自动触发
+#   - 或在 Actions 页面手动 Run workflow
+# 产物：dist/lovekey-tweak/LovekeyTweak.dylib（同时上传为 artifact）
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'lovekey-tweak/**'
+
+jobs:
+  build:
+    runs-on: macos-14
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      # theos-action 自带缓存，比手动 git clone --recursive 快得多
+      - name: Setup Theos
+        uses: Randomblock1/theos-action@v1
+
+      - name: Build dylib
+        run: |
+          set -e
+          cd lovekey-tweak
+          make clean >/dev/null 2>&1 || true
+          # 只编译 dylib，不打包 deb（deb 打包要走 dpkg-deb，最耗时）
+          make stage2 2>&1 | tail -30 || make 2>&1 | tail -30
+          mkdir -p /tmp/out
+          find .theos -name '*.dylib' -exec cp {} /tmp/out/ \;
+          ls -la /tmp/out/
+
+      - name: Verify
+        run: |
+          set -e
+          DY=$(ls /tmp/out/*.dylib | head -1)
+          ls -la "$DY"
+          # 快速语法级校验：确认关键新代码在产物里
+          for s in "protocolClasses" "LovekeyTweak"; do
+            if strings "$DY" | grep -q "$s"; then
+              echo "OK: $s"
+            else
+              echo "::error::dylib 缺少 [$s]"
+              exit 1
+            fi
+          done
+          if otool -L "$DY" | grep -qiE 'substrate|libhooker|ellekit'; then
+            echo "::error::依赖 hook 运行时"
+            exit 1
+          fi
+          echo "校验通过"
+
+      - name: Publish to dist
+        if: always()
+        run: |
+          mkdir -p dist/lovekey-tweak
+          cp /tmp/out/*.dylib dist/lovekey-tweak/ 2>/dev/null || true
+          ls -la dist/lovekey-tweak/ || true
+
+      - name: Commit dist
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f dist/lovekey-tweak/LovekeyTweak.dylib
+          git commit -m "ci: fast build [skip ci]" || true
+          git pull --rebase origin main || true
+          git push || true
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LovekeyTweak-fast
+          path: /tmp/out/*.dylib
+          if-no-files-found: warn
+          retention-days: 3

@@ -28,4 +28,11 @@
 // 启动时主动写入全套伪造登录态（standard + App Group）
 + (void)seedLoginState;
 
+// 本地伪造的 token（格式 <memberID>|<32位随机串>，与服务端一致）
++ (NSString *)fakeToken;
+
+// 伪造的 UserManager 结构（com.kb.shareaccount 的实际内容）
++ (NSDictionary *)fakeUserManager;
++ (NSString *)fakeUserManagerJSON;
+
 @end

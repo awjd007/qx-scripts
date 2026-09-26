@@ -99,9 +99,9 @@ static NSString *const kAppGroup = @"group.com.cck.lovekey";
 // 启动时主动把全套伪造登录态写进共享域与 standard 域，
 // 避免客户端首次读取时拿到 nil。
 + (void)seedLoginState {
-    NSDictionary *acc = [self fakeAccount];
-    NSString *accJSON = [self fakeAccountJSON];
-    NSString *token = @"30699999|lktweakLocalToken000000000000000000";
+    NSDictionary *um = [self fakeUserManager];
+    NSString *umJSON = [self fakeUserManagerJSON];
+    NSString *token = [self fakeToken];
 
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
     NSUserDefaults *gs = [self groupStore];
@@ -111,22 +111,62 @@ static NSString *const kAppGroup = @"group.com.cck.lovekey";
     for (NSUserDefaults *store in @[ud, gs]) {
         if (!store) continue;
         @try {
-            [store setObject:acc        forKey:kKeyShareAccount];
-            [store setObject:token      forKey:kKeyUserToken];
-            [store setObject:@NO        forKey:kKeyIsGuest];
-            [store setObject:accJSON    forKey:kKeyLocalUser];
-            [store setObject:@"iPhone"  forKey:kKeyDevName];
+            [store setObject:um      forKey:kKeyShareAccount];
+            [store setObject:token   forKey:kKeyUserToken];
+            [store setObject:@NO     forKey:kKeyIsGuest];
+            [store setObject:umJSON  forKey:kKeyLocalUser];
+            [store setObject:@"iPhone" forKey:kKeyDevName];
             [store synchronize];
         } @catch (NSException *e) {}
     }
     gInLoginWrite = prev;
-    LKLog(@"[login] 已向 standard + %@ 写入伪造登录态", kAppGroup);
+    LKLog(@"[login] 已向 standard + %@ 写入伪造登录态(token=%@...)",
+          kAppGroup, [token substringToIndex:MIN(12, token.length)]);
 }
 
 #pragma mark - 伪造的登录态数据
 
 // 永久会员时间戳：2100-01-01，避免某些实现用 32 位 int 溢出
 static NSString *const kForeverExpire = @"4102416000";
+
+// 本地伪造的 token。格式必须与服务端一致：<数字ID>|<32位随机串>
+// （客户端会把它直接当 Authorization 使用，格式不符会被服务端拒绝）
++ (NSString *)fakeToken {
+    static NSString *t = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSMutableString *s = [NSMutableString stringWithFormat:@"%lld|", [self memberID]];
+        static const char *cs = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        for (int i = 0; i < 32; i++) [s appendFormat:@"%c", cs[arc4random_uniform(62)]];
+        t = s;
+    });
+    return t;
+}
+
+// com.kb.shareaccount 存的是 UserManager 的结构（不是服务端 /v1/account 的响应）。
+// 字段名从 appex 二进制提取：account / logInToken / intimacy / idfa / uudIdStr /
+// deviceName / config / relationModels / nowRelationModel / dataLoad
+// 若结构不符，客户端解析失败会退化成拿裸 token 当 Authorization，导致校验不过。
++ (NSDictionary *)fakeUserManager {
+    return @{
+        @"account":         [self fakeAccount],
+        @"logInToken":      [self fakeToken],
+        @"intimacy":        @30,
+        @"idfa":            @"00000000-0000-0000-0000-000000000000",
+        @"uudIdStr":        [self deviceIdentifier],
+        @"deviceName":      @"iPhone",
+        @"config":          @{},
+        @"relationModels":  @[],
+        @"nowRelationModel": @{},
+        @"dataLoad":        @YES,
+        @"isGuestLogin":    @NO,
+    };
+}
+
++ (NSString *)fakeUserManagerJSON {
+    NSData *d = [NSJSONSerialization dataWithJSONObject:[self fakeUserManager] options:0 error:nil];
+    return d ? [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] : @"{}";
+}
 
 + (NSDictionary *)fakeAccount {
     long long mid = [self memberID];
@@ -177,19 +217,17 @@ static NSString *const kForeverExpire = @"4102416000";
 
 + (id)fakeValueForKey:(NSString *)key {
     if ([key isEqualToString:kKeyShareAccount]) {
-        // 客户端可能以 JSON 字符串或字典形式读取，这里统一给字典更通用；
-        // 若实际读字符串也能被 NSString 分支兜住。
-        return [self fakeAccount];
+        // shareaccount 存的是 UserManager 结构（含 logInToken），不是账号对象
+        return [self fakeUserManager];
     }
     if ([key isEqualToString:kKeyUserToken]) {
-        // 给一个非空 token 即可，实际请求仍由 LKURLProtocol 替换为真实访客 token
-        return @"30699999|lktweakLocalToken000000000000000000";
+        return [self fakeToken];
     }
     if ([key isEqualToString:kKeyIsGuest]) {
         return @NO;
     }
     if ([key isEqualToString:kKeyLocalUser]) {
-        return [self fakeAccountJSON];
+        return [self fakeUserManagerJSON];
     }
     return nil;
 }
@@ -210,9 +248,10 @@ static id hk_objectForKey(id self, SEL _cmd, NSString *key) {
 static NSString *hk_stringForKey(id self, SEL _cmd, NSString *key) {
     if ([[LKLogin class] isLoginKey:key]) {
         if ([key isEqualToString:kKeyUserToken]) {
-            return @"30699999|lktweakLocalToken000000000000000000";
+            return [[LKLogin class] fakeToken];
         }
-        return [[LKLogin class] fakeAccountJSON];
+        // shareaccount / localUserModel 以 JSON 字符串形式返回 UserManager 结构
+        return [[LKLogin class] fakeUserManagerJSON];
     }
     return ((id (*)(id, SEL, id))gOrigStringForKey)(self, _cmd, key);
 }
@@ -234,7 +273,7 @@ static NSDictionary *hk_dictionaryForKey(id self, SEL _cmd, NSString *key) {
 // 客户端可能以 NSData(JSON) 形式存取账号，需要一并覆盖
 static NSData *hk_dataForKey(id self, SEL _cmd, NSString *key) {
     if ([[LKLogin class] isLoginKey:key]) {
-        NSString *json = [[LKLogin class] fakeAccountJSON];
+        NSString *json = [[LKLogin class] fakeUserManagerJSON];
         return [json dataUsingEncoding:NSUTF8StringEncoding];
     }
     return ((id (*)(id, SEL, id))gOrigDataForKey)(self, _cmd, key);
@@ -274,9 +313,9 @@ static void hk_setObject(id self, SEL _cmd, id value, NSString *key) {
         // 额外写入会形成递归（本方法 → syncToGroupForKey → 本方法）导致崩溃。
         id fake = nil;
         if ([value isKindOfClass:[NSString class]]) {
-            fake = [[LKLogin class] fakeAccountJSON];
+            fake = [[LKLogin class] fakeUserManagerJSON];
         } else if ([value isKindOfClass:[NSDictionary class]]) {
-            fake = [[LKLogin class] fakeAccount];
+            fake = [[LKLogin class] fakeUserManager];
         } else {
             fake = [[LKLogin class] fakeValueForKey:key];
         }
