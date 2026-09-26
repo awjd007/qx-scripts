@@ -35,4 +35,7 @@
 + (NSDictionary *)fakeUserManager;
 + (NSString *)fakeUserManagerJSON;
 
+// hook KeyboardManager 的登录门禁属性（isNeedBind / isGuest / showMemberVC）
++ (void)installManagerHooks;
+
 @end

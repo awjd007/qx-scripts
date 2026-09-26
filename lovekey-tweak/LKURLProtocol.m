@@ -122,7 +122,12 @@ static NSMutableSet *gSeenHosts = nil;
     NSInteger code = [response isKindOfClass:[NSHTTPURLResponse class]]
                      ? ((NSHTTPURLResponse *)response).statusCode : -1;
     LKLog(@"[chat] 响应头 status=%ld", (long)code);
-    [self.client URLProtocol:self didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageNotAllowed];
+    // 必须剥离 Content-Length / Content-Encoding：
+    // SSE 流式响应逐块转发，长度与原始头部声明不一致，
+    // 客户端按声明的长度校验会认为数据不完整而丢弃整段解析结果
+    // （表现为"请求成功、服务端返回 code:0，但界面不出词"）。
+    NSURLResponse *fixed = [self stripLengthHeaders:response];
+    [self.client URLProtocol:self didReceiveResponse:fixed cacheStoragePolicy:NSURLCacheStorageNotAllowed];
     completionHandler(NSURLSessionResponseAllow);
 }
 

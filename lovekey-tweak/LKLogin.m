@@ -329,6 +329,71 @@ static void hk_setObject(id self, SEL _cmd, id value, NSString *key) {
     ((void (*)(id, SEL, id, id))gOrigSetObject)(self, _cmd, value, key);
 }
 
+#pragma mark - KeyboardManager 属性 hook
+//
+// 登录门禁的真正开关不在 NSUserDefaults，而在 KeyboardManager 的实例属性：
+//   isGuest       是否游客
+//   isNeedBind    是否需要绑定  ← 「请先绑定账号」的直接依据
+//   showMemberVC  是否弹会员页
+// 这三个是 Swift 只读计算属性（二进制里只有 getter，无 setter），
+// 在类方法表层面替换 getter 即可让所有实例返回伪造值。
+
+static IMP gOrigIsNeedBind    = NULL;
+static IMP gOrigIsGuest       = NULL;
+static IMP gOrigShowMemberVC  = NULL;
+
+static BOOL hk_isNeedBind(id self, SEL _cmd) {
+    if (gOrigIsNeedBind) {
+        BOOL orig = ((BOOL (*)(id, SEL))gOrigIsNeedBind)(self, _cmd);
+        if (orig) LKLog(@"[login] isNeedBind 原值=YES → 强制 NO");
+    }
+    return NO;
+}
+
+static BOOL hk_isGuest(id self, SEL _cmd) {
+    return NO;
+}
+
+static BOOL hk_showMemberVC(id self, SEL _cmd) {
+    return NO;
+}
+
++ (void)installManagerHooks {
+    // Swift 类名带模块前缀，两种写法都试
+    const char *names[] = {
+        "_TtC16SeekLoveKeyboard15KeyboardManager",
+        "SeekLoveKeyboard.KeyboardManager",
+        "KeyboardManager",
+    };
+    Class cls = NULL;
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        cls = objc_getClass(names[i]);
+        if (cls) { LKLog(@"[login] 找到 KeyboardManager: %s", names[i]); break; }
+    }
+    if (!cls) {
+        LKLog(@"[login] !! 找不到 KeyboardManager 类，门禁 hook 跳过");
+        return;
+    }
+
+    struct { const char *sel; IMP imp; IMP *orig; const char *desc; } items[] = {
+        { "isNeedBind",   (IMP)hk_isNeedBind,   &gOrigIsNeedBind,   "isNeedBind" },
+        { "isGuest",      (IMP)hk_isGuest,      &gOrigIsGuest,      "isGuest" },
+        { "showMemberVC", (IMP)hk_showMemberVC, &gOrigShowMemberVC, "showMemberVC" },
+    };
+
+    for (size_t i = 0; i < sizeof(items) / sizeof(items[0]); i++) {
+        SEL sel = sel_registerName(items[i].sel);
+        Method m = class_getInstanceMethod(cls, sel);
+        if (!m) {
+            LKLog(@"[login] KeyboardManager 无 %s（可能是存储属性，跳过）", items[i].desc);
+            continue;
+        }
+        *items[i].orig = method_getImplementation(m);
+        method_setImplementation(m, items[i].imp);
+        LKLog(@"[login] hook KeyboardManager.%s 成功", items[i].desc);
+    }
+}
+
 + (void)install {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -362,6 +427,11 @@ static void hk_setObject(id self, SEL _cmd, id value, NSString *key) {
         // 主动写入伪造登录态：客户端 UserManager 会先尝试读取已有值，
         // 若为空才走登录流程；预置数据可让它直接认为「已绑定」。
         [self seedLoginState];
+
+        // 关键：登录门禁的真正开关是 KeyboardManager 的实例属性
+        // （isNeedBind / isGuest / showMemberVC），只改 NSUserDefaults 影响不到它，
+        // 「开场白」「优化」在发请求前就被这几个属性拦下。
+        [self installManagerHooks];
     });
 }
 
