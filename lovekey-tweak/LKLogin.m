@@ -364,21 +364,18 @@ static BOOL hk_showMemberVC(id self, SEL _cmd) {
 }
 
 + (void)installManagerHooks {
-    // Swift 类名带模块前缀，两种写法都试
-    const char *names[] = {
-        "_TtC16SeekLoveKeyboard15KeyboardManager",
-        "SeekLoveKeyboard.KeyboardManager",
-        "KeyboardManager",
-    };
-    Class cls = NULL;
-    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
-        cls = objc_getClass(names[i]);
-        if (cls) { LKLog(@"[login] 找到 KeyboardManager: %s", names[i]); break; }
-    }
+    // 注意：KeyboardManager 是纯 Swift 类（运行时名 _TtC16SeekLoveKeyboard15KeyboardManager），
+    // 可能未导出到 ObjC 运行时，objc_getClass 找不到。
+    // 先遍历全部已注册类，把含关键字的类名打出来，便于确认它到底在不在运行时表里。
+    [self dumpClassesMatching:@"Keyboard"];
+    [self dumpClassesMatching:@"UserManager"];
+
+    Class cls = [self findSwiftClassByName:@"KeyboardManager"];
     if (!cls) {
         LKLog(@"[login] !! 找不到 KeyboardManager 类，门禁 hook 跳过");
         return;
     }
+    LKLog(@"[login] 找到 KeyboardManager: %s", class_getName(cls));
 
     struct { const char *sel; IMP imp; IMP *orig; const char *desc; } items[] = {
         { "isNeedBind",   (IMP)hk_isNeedBind,   &gOrigIsNeedBind,   "isNeedBind" },
@@ -397,6 +394,48 @@ static BOOL hk_showMemberVC(id self, SEL _cmd) {
         method_setImplementation(m, items[i].imp);
         LKLog(@"[login] hook KeyboardManager.%s 成功", items[i].desc);
     }
+}
+
+// 打印运行时里所有名字含关键字的类，用于确认目标类是否可达
++ (void)dumpClassesMatching:(NSString *)kw {
+    int count = objc_getClassList(NULL, 0);
+    if (count <= 0) { LKLog(@"[login] 运行时类数量=0"); return; }
+    Class *classes = (Class *)malloc(sizeof(Class) * (size_t)count);
+    if (!classes) return;
+    count = objc_getClassList(classes, count);
+    int hits = 0;
+    for (int i = 0; i < count; i++) {
+        const char *nm = class_getName(classes[i]);
+        if (!nm) continue;
+        if (strstr(nm, kw.UTF8String)) {
+            LKLog(@"[login] 运行时类: %s", nm);
+            if (++hits >= 40) break;    // 限制条数，避免刷屏
+        }
+    }
+    LKLog(@"[login] 含「%@」的运行时类共 %d 个（上限40）", kw, hits);
+    free(classes);
+}
+
+// 在运行时全部类里按「简单类名」或「Swift 运行时名后缀」查找
++ (Class)findSwiftClassByName:(NSString *)simpleName {
+    int count = objc_getClassList(NULL, 0);
+    if (count <= 0) return Nil;
+    Class *classes = (Class *)malloc(sizeof(Class) * (size_t)count);
+    if (!classes) return Nil;
+    count = objc_getClassList(classes, count);
+    Class found = Nil;
+    for (int i = 0; i < count; i++) {
+        const char *nm = class_getName(classes[i]);
+        if (!nm) continue;
+        NSString *s = [NSString stringWithUTF8String:nm];
+        // 匹配 "KeyboardManager" 或 "...KeyboardManager"（Swift 运行时名结尾）
+        if ([s isEqualToString:simpleName] || [s hasSuffix:simpleName]) {
+            found = classes[i];
+            break;
+        }
+    }
+    free(classes);
+    return found;
 }
 
 + (void)install {
