@@ -141,42 +141,4 @@ static NSString *const kGuestURL    = @"https://sea.api.lovekeyboard.com/v2/auth
     [task resume];
 }
 
-#pragma mark - token 缓存
-
-static NSString *gCachedToken = nil;
-static NSLock *gTokenLock = nil;
-
-+ (void)invalidateToken {
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{ gTokenLock = [NSLock new]; });
-    [gTokenLock lock];
-    gCachedToken = nil;
-    [gTokenLock unlock];
-    LKLog(@"[auth] token 缓存已失效");
-}
-
-+ (void)ensureToken:(void (^)(NSString *))completion {
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{ gTokenLock = [NSLock new]; });
-
-    [gTokenLock lock];
-    NSString *cached = gCachedToken;
-    [gTokenLock unlock];
-
-    if (cached.length > 0) {
-        if (completion) completion(cached);
-        return;
-    }
-
-    [self fetchGuestToken:^(NSString *token) {
-        if (token.length > 0) {
-            [gTokenLock lock];
-            gCachedToken = token;
-            [gTokenLock unlock];
-            LKLog(@"[auth] 已缓存新 token 供后续接口复用");
-        }
-        if (completion) completion(token);
-    }];
-}
-
 @end
