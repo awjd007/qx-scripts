@@ -1,6 +1,7 @@
 #import "LKLogin.h"
 #import "LKLog.h"
 #import <objc/runtime.h>
+#import <UIKit/UIKit.h>
 
 // 需要伪造/拦截的登录态键
 static NSString *const kKeyShareAccount = @"com.kb.shareaccount";
@@ -24,6 +25,17 @@ static IMP gOrigDictionaryForKey = NULL;
 static IMP gOrigDataForKey      = NULL;
 static IMP gOrigBoolForKey      = NULL;
 static IMP gOrigValueForKey     = NULL;
+@interface LKLogin ()
++ (void)seedLoginState;
++ (void)installManagerHooks;
++ (Class)findSwiftClassByName:(NSString *)simpleName;
++ (void)dumpClassesMatching:(NSString *)kw;
++ (void)dumpTargetIvars:(Class)cls tag:(NSString *)tag;
++ (void)registerInitRule:(NSDictionary *)rule forClass:(Class)cls sel:(SEL)sel orig:(IMP)orig;
++ (BOOL)forceIvar:(NSString *)ivarName value:(id)value onObject:(id)obj;
++ (void)hookInitNoArg:(Class)cls ivar:(NSString *)ivar value:(NSNumber *)value;
+@end
+
 @implementation LKLogin
 
 #pragma mark - 持久化取值
@@ -363,36 +375,165 @@ static BOOL hk_showMemberVC(id self, SEL _cmd) {
     return NO;
 }
 
-+ (void)installManagerHooks {
-    // 注意：KeyboardManager 是纯 Swift 类（运行时名 _TtC16SeekLoveKeyboard15KeyboardManager），
-    // 可能未导出到 ObjC 运行时，objc_getClass 找不到。
-    // 先遍历全部已注册类，把含关键字的类名打出来，便于确认它到底在不在运行时表里。
-    [self dumpClassesMatching:@"Keyboard"];
-    [self dumpClassesMatching:@"UserManager"];
+#pragma mark - 登录门禁拦截
+//
+// 从发布的 appex 符号表（nm + swift-demangle）确认的判断点：
+//
+//   ivar（存储属性，无 ObjC getter，无法用 method_setImplementation 改）：
+//     SeekLoveKeyboard.KeyboardManager     .isGuest / .isNeedBind
+//     SeekLoveKeyboard.KBKcbViewController .isNeedBind   ← 开场白控制器自带一份
+//
+//   提示视图（有 ObjC 方法，可 hook）：
+//     -[SeekLoveKeyboard.KBLoginHintView initWithFrame:]
+//     -[SeekLoveKeyboard.KBLoginHintView initWithCoder:]
+//     -[SeekLoveKeyboard.KBLoginHintView layoutSubviews]
+//     文案「请先绑定账号 / 为了您的账户安全」就在这个视图里。
+//
+// 策略：双管齐下
+//   1) hook 提示视图的 init/layoutSubviews —— 让它不显示（治标但立即可见）
+//   2) hook 判断所在类的 init —— 实例创建后把 isNeedBind/isGuest ivar 写成 false
 
-    Class cls = [self findSwiftClassByName:@"KeyboardManager"];
-    if (!cls) {
-        LKLog(@"[login] !! 找不到 KeyboardManager 类，门禁 hook 跳过");
-        return;
+static NSMutableDictionary *gInitRules = nil;   // "类名|选择子" -> @{orig, rules}
+
++ (void)registerInitRule:(NSDictionary *)rule forClass:(Class)cls sel:(SEL)sel orig:(IMP)orig {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ gInitRules = [NSMutableDictionary dictionary]; });
+    NSString *key = [NSString stringWithFormat:@"%s|%s", class_getName(cls), sel_getName(sel)];
+    gInitRules[key] = @{ @"orig": [NSValue valueWithPointer:orig],
+                         @"cls": cls,
+                         @"ivar": rule[@"ivar"],
+                         @"value": rule[@"value"] };
+}
+
+// 统一的 init 替换实现。
+// 仅处理 init（无参）。initWithCoder: / initWithFrame: 等带参构造走各自专用 hook。
+static id LKInitNoArgHook(id self, SEL _cmd) {
+    NSString *key = [NSString stringWithFormat:@"%s|%s", class_getName(object_getClass(self)), sel_getName(_cmd)];
+    NSDictionary *r = gInitRules[key];
+    IMP orig = r ? [r[@"orig"] pointerValue] : NULL;
+    id obj = orig ? ((id (*)(id, SEL))orig)(self, _cmd) : self;
+    if (r) {
+        [[LKLogin class] forceIvar:r[@"ivar"] value:r[@"value"] onObject:obj];
     }
-    LKLog(@"[login] 找到 KeyboardManager: %s", class_getName(cls));
+    return obj;
+}
 
-    struct { const char *sel; IMP imp; IMP *orig; const char *desc; } items[] = {
-        { "isNeedBind",   (IMP)hk_isNeedBind,   &gOrigIsNeedBind,   "isNeedBind" },
-        { "isGuest",      (IMP)hk_isGuest,      &gOrigIsGuest,      "isGuest" },
-        { "showMemberVC", (IMP)hk_showMemberVC, &gOrigShowMemberVC, "showMemberVC" },
-    };
+// initWithFrame: 专用（CGRect 参数）
+static id LKInitFrameHook(id self, SEL _cmd, CGRect frame) {
+    NSString *key = [NSString stringWithFormat:@"%s|%s", class_getName(object_getClass(self)), sel_getName(_cmd)];
+    NSDictionary *r = gInitRules[key];
+    IMP orig = r ? [r[@"orig"] pointerValue] : NULL;
+    id obj = orig ? ((id (*)(id, SEL, CGRect))orig)(self, _cmd, frame) : self;
+    if (r) [[LKLogin class] forceIvar:r[@"ivar"] value:r[@"value"] onObject:obj];
+    return obj;
+}
 
-    for (size_t i = 0; i < sizeof(items) / sizeof(items[0]); i++) {
-        SEL sel = sel_registerName(items[i].sel);
-        Method m = class_getInstanceMethod(cls, sel);
-        if (!m) {
-            LKLog(@"[login] KeyboardManager 无 %s（可能是存储属性，跳过）", items[i].desc);
-            continue;
+// 把 ivar 写成期望值。Swift Bool 的 ivar 类型编码为 'B'。
++ (BOOL)forceIvar:(NSString *)ivarName value:(id)value onObject:(id)obj {
+    if (!obj || ivarName.length == 0) return NO;
+    Ivar iv = NULL;
+    Class c = object_getClass(obj);
+    while (c && !iv) {
+        iv = class_getInstanceVariable(c, ivarName.UTF8String);
+        c = class_getSuperclass(c);
+    }
+    if (!iv) return NO;
+    const char *t = ivar_getTypeEncoding(iv);
+    BOOL want = [value boolValue];
+    if (t && (t[0] == 'B' || t[0] == 'c')) {
+        ptrdiff_t off = ivar_getOffset(iv);
+        uint8_t *base = (uint8_t *)(__bridge void *)obj;
+        base[off] = want ? 1 : 0;
+        LKLog(@"[login] 已改写 %@.%s = %d", NSStringFromClass(object_getClass(obj)), ivarName.UTF8String, want);
+        return YES;
+    }
+    LKLog(@"[login] %@.%s 类型非 Bool(type=%s)，跳过", NSStringFromClass(object_getClass(obj)), ivarName.UTF8String, t ?: "?");
+    return NO;
+}
+
+// 列出类的目标 ivar 名与类型，便于确认命名前缀（Swift 常带下划线）
++ (void)dumpTargetIvars:(Class)cls tag:(NSString *)tag {
+    if (!cls) { LKLog(@"[login] %@ 类不存在", tag); return; }
+    unsigned int n = 0;
+    Ivar *ivs = class_copyIvarList(cls, &n);
+    if (!ivs) { LKLog(@"[login] %@ 无 ivar", tag); return; }
+    int hit = 0;
+    for (unsigned int i = 0; i < n; i++) {
+        const char *nm = ivar_getName(ivs[i]);
+        if (!nm) continue;
+        NSString *s = [NSString stringWithUTF8String:nm];
+        if ([s rangeOfString:@"isNeedBind" options:NSCaseInsensitiveSearch].location != NSNotFound ||
+            [s rangeOfString:@"isGuest" options:NSCaseInsensitiveSearch].location != NSNotFound) {
+            LKLog(@"[login] %@ ivar=%s type=%s offset=%td", tag, nm,
+                  ivar_getTypeEncoding(ivs[i]) ?: "?", (ptrdiff_t)ivar_getOffset(ivs[i]));
+            hit++;
         }
-        *items[i].orig = method_getImplementation(m);
-        method_setImplementation(m, items[i].imp);
-        LKLog(@"[login] hook KeyboardManager.%s 成功", items[i].desc);
+    }
+    free(ivs);
+    if (!hit) LKLog(@"[login] %@ 未找到 isNeedBind/isGuest", tag);
+}
+
++ (void)installManagerHooks {
+    Class km  = [self findSwiftClassByName:@"KeyboardManager"];
+    Class kcb = [self findSwiftClassByName:@"KBKcbViewController"];
+    Class hint = [self findSwiftClassByName:@"KBLoginHintView"];
+
+    LKLog(@"[login] 类查找: KeyboardManager=%s KBKcb=%@ KBLoginHint=%@",
+          km ? class_getName(km) : "(nil)",
+          kcb ? NSStringFromClass(kcb) : @"(nil)",
+          hint ? NSStringFromClass(hint) : @"(nil)");
+
+    [self dumpTargetIvars:km  tag:@"KeyboardManager"];
+    [self dumpTargetIvars:kcb tag:@"KBKcbViewController"];
+
+    // 1) 改写门禁 ivar
+    [self hookInitNoArg:km  ivar:@"_isNeedBind" value:@NO];
+    [self hookInitNoArg:km  ivar:@"_isGuest"    value:@NO];
+    [self hookInitNoArg:kcb ivar:@"_isNeedBind" value:@NO];
+
+    // 2) 拦掉提示视图：让 KBLoginHintView 一创建就隐藏
+    if (hint) {
+        // initWithFrame:
+        SEL sf = sel_registerName("initWithFrame:");
+        Method mf = class_getInstanceMethod(hint, sf);
+        if (mf) {
+            IMP o = method_getImplementation(mf);
+            [self registerInitRule:@{@"ivar": @"", @"value": @NO} forClass:hint sel:sf orig:o];
+            method_setImplementation(mf, (IMP)LKInitFrameHook);
+            LKLog(@"[login] hook KBLoginHintView.initWithFrame: 成功");
+        }
+        // layoutSubviews：每次布局都强制隐藏，兜住其它创建路径
+        SEL sl = sel_registerName("layoutSubviews");
+        Method ml = class_getInstanceMethod(hint, sl);
+        if (ml) {
+            gOrigHintLayout = method_getImplementation(ml);
+            method_setImplementation(ml, (IMP)LKHintLayoutHook);
+            LKLog(@"[login] hook KBLoginHintView.layoutSubviews 成功");
+        }
+    }
+}
+
++ (void)hookInitNoArg:(Class)cls ivar:(NSString *)ivar value:(NSNumber *)value {
+    if (!cls) return;
+    SEL s = sel_registerName("init");
+    Method m = class_getInstanceMethod(cls, s);
+    if (!m) { LKLog(@"[login] %@ 无 init", NSStringFromClass(cls)); return; }
+    IMP o = method_getImplementation(m);
+    [self registerInitRule:@{@"ivar": ivar, @"value": value} forClass:cls sel:s orig:o];
+    method_setImplementation(m, (IMP)LKInitNoArgHook);
+    LKLog(@"[login] hook %@.init → %@=%@", NSStringFromClass(cls), ivar, value);
+}
+
+// 提示视图布局时隐藏自身
+static IMP gOrigHintLayout = NULL;
+static void LKHintLayoutHook(id self, SEL _cmd) {
+    if (gOrigHintLayout) ((void (*)(id, SEL))gOrigHintLayout)(self, _cmd);
+    if ([self isKindOfClass:[UIView class]]) {
+        UIView *v = (UIView *)self;
+        if (!v.hidden) {
+            v.hidden = YES;
+            LKLog(@"[login] 已隐藏登录提示视图 %@", NSStringFromClass([self class]));
+        }
     }
 }
 
