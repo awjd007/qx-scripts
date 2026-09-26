@@ -330,10 +330,10 @@ static NSMutableSet *gSeenHosts = nil;
                     [arr addObject:item];
                 }
             }
-            if (arr.count == 0) [arr addObject:@{ @"version": kAppVersion, @"status": @"1" }];
+            if (arr.count == 0) [arr addObject:@{ @"version": @"v1.8.5", @"status": @"1" }];
             cm[@"ios_keyboard_login_statue"] = arr;
         } else {
-            cm[@"ios_keyboard_login_statue"] = @[ @{ @"version": kAppVersion, @"status": @"1" } ];
+            cm[@"ios_keyboard_login_statue"] = @[ @{ @"version": @"v1.8.5", @"status": @"1" } ];
         }
         cm[@"ios_member_in_keyboard"] = @"1";
         if (cm[@"ios_subscription_manage_type"] == nil) cm[@"ios_subscription_manage_type"] = @"2";
