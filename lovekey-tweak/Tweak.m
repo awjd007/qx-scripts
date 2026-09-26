@@ -10,6 +10,7 @@
 #import "LKLogin.h"
 #import "LKLog.h"
 
+// 构建时间戳: 2026-09-26 22:24:29
 // 构建触发标记（用于强制 CI 重新编译，可随时删除）
 
 static IMP gOrigProtocolClasses = NULL;
