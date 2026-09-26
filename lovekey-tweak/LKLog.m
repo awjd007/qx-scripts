@@ -4,6 +4,8 @@
 #import <objc/runtime.h>
 #import <unistd.h>
 #import <sys/stat.h>
+#import <sys/time.h>      // gettimeofday
+#import <time.h>          // localtime_r / time_t
 
 static NSString *gLogPath = nil;
 static os_unfair_lock gLock = OS_UNFAIR_LOCK_INIT;
@@ -78,9 +80,30 @@ void LKLog(NSString *fmt, ...) {
     NSString *msg = [[NSString alloc] initWithFormat:fmt arguments:args];
     va_end(args);
 
-    NSString *proc = [[NSProcessInfo processInfo] processName] ?: @"?";
-    NSString *line = [NSString stringWithFormat:@"[LK %@][%@ pid=%d] %@\n",
-                      [NSDate date], proc, getpid(), msg];
+    // 时间戳必须用纯 C 构造，不能用 [NSDate date] / NSDateFormatter。
+    // 原因：LKLog 会被 NSUserDefaults 的 hook 调用（fakeUserManager → memberID …），
+    // 而 NSDate 的 description 会走 ICU 日期格式化，ICU 内部又访问 locale/UserDefaults，
+    // 形成重入并直接崩溃（实测崩溃栈：
+    //   LKLog → NSString stringWithFormat → NSDate descriptionWithLocale
+    //        → CFDateFormatterCreateStringWithAbsoluteTime → libicucore）。
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    time_t sec = tv.tv_sec;
+    struct tm tmv;
+    localtime_r(&sec, &tmv);
+    char tsbuf[32];
+    snprintf(tsbuf, sizeof(tsbuf), "%02d:%02d:%02d.%03d",
+             tmv.tm_hour, tmv.tm_min, tmv.tm_sec, (int)(tv.tv_usec / 1000));
+
+    // 进程名同样可能触发 Foundation 内部逻辑，失败时退化为 pid
+    const char *proc = "?";
+    @try {
+        NSString *pn = [[NSProcessInfo processInfo] processName];
+        if (pn.length) proc = pn.UTF8String ?: "?";
+    } @catch (NSException *e) { proc = "?"; }
+
+    NSString *line = [NSString stringWithFormat:@"[LK %s][%s pid=%d] %@\n",
+                      tsbuf, proc, getpid(), msg];
 
     // 通道 1：syslog（public 格式，避免被隐私脱敏成 <private>）
     os_log_with_type(OS_LOG_DEFAULT, OS_LOG_TYPE_DEFAULT, "%{public}s", line.UTF8String);
@@ -93,7 +116,10 @@ void LKLog(NSString *fmt, ...) {
 
 void LKLogEnvironment(void) {
     NSDictionary *info = [[NSBundle mainBundle] infoDictionary];
-    LKLog(@"=== LovekeyTweak 启动 ===");
+    // 版本标识：用于确认设备上实际运行的是哪一份 dylib。
+    // 每次交付新版本必须同步修改，否则无法从日志判断产物是否更新。
+    LKLog(@"=== LovekeyTweak 启动 (build=%s) ===", LK_TWEAK_BUILD);
+    LKLog(@"tweakBuild = %s", LK_TWEAK_BUILD);
     LKLog(@"bundleID   = %@", [[NSBundle mainBundle] bundleIdentifier]);
     LKLog(@"appVer     = %@ (%@)", info[@"CFBundleShortVersionString"], info[@"CFBundleVersion"]);
     LKLog(@"process    = %@", [[NSProcessInfo processInfo] processName]);

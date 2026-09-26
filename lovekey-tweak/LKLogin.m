@@ -99,15 +99,18 @@ static NSString *const kAppGroup = @"group.com.cck.lovekey";
 // 启动时主动把全套伪造登录态写进共享域与 standard 域，
 // 避免客户端首次读取时拿到 nil。
 + (void)seedLoginState {
+    LKLog(@"[login] seedLoginState 开始");
     NSDictionary *um = [self fakeUserManager];
     NSString *umJSON = [self fakeUserManagerJSON];
     NSString *token = [self fakeToken];
+    LKLog(@"[login] 伪造数据构造完成 token=%@...", [token substringToIndex:MIN(12, token.length)]);
 
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
     NSUserDefaults *gs = [self groupStore];
 
     BOOL prev = gInLoginWrite;
     gInLoginWrite = YES;      // 防止写入过程被自己的 hook 再次拦截
+    int okCount = 0;
     for (NSUserDefaults *store in @[ud, gs]) {
         if (!store) continue;
         @try {
@@ -117,11 +120,13 @@ static NSString *const kAppGroup = @"group.com.cck.lovekey";
             [store setObject:umJSON  forKey:kKeyLocalUser];
             [store setObject:@"iPhone" forKey:kKeyDevName];
             [store synchronize];
-        } @catch (NSException *e) {}
+            okCount++;
+        } @catch (NSException *e) {
+            LKLog(@"[login] !! 写共享域异常: %@", e.reason);
+        }
     }
     gInLoginWrite = prev;
-    LKLog(@"[login] 已向 standard + %@ 写入伪造登录态(token=%@...)",
-          kAppGroup, [token substringToIndex:MIN(12, token.length)]);
+    LKLog(@"[login] 已向 standard + %@ 写入伪造登录态(%d/2)", kAppGroup, okCount);
 }
 
 #pragma mark - 伪造的登录态数据
@@ -423,16 +428,27 @@ static BOOL hk_showMemberVC(id self, SEL _cmd) {
         NSString *dev = [self deviceIdentifier];
         LKLog(@"[login] 登录态伪造就绪 member_id=%lld device=%@@...",
               [self memberID], [dev substringToIndex:MIN(8, dev.length)]);
-
-        // 主动写入伪造登录态：客户端 UserManager 会先尝试读取已有值，
-        // 若为空才走登录流程；预置数据可让它直接认为「已绑定」。
-        [self seedLoginState];
-
-        // 关键：登录门禁的真正开关是 KeyboardManager 的实例属性
-        // （isNeedBind / isGuest / showMemberVC），只改 NSUserDefaults 影响不到它，
-        // 「开场白」「优化」在发请求前就被这几个属性拦下。
-        [self installManagerHooks];
     });
+
+    // 下面两步刻意放在 dispatch_once 之外：
+    // 之前把 seedLoginState / installManagerHooks 放进 once 块内，
+    // 一旦其中任一步（当时是 LKLog 用 NSDate 触发 ICU 重入）崩溃，
+    // dispatch_once 会被标记为「已执行」，后续调用直接跳过，
+    // 导致 installManagerHooks 永远不执行且无任何日志。
+    // 拆开后即使某步失败，其余步骤仍能继续，且重试时不会互相影响。
+    @try {
+        [self seedLoginState];
+    } @catch (NSException *e) {
+        LKLog(@"[login] !! seedLoginState 抛异常: %@", e.reason);
+    }
+
+    @try {
+        [self installManagerHooks];
+    } @catch (NSException *e) {
+        LKLog(@"[login] !! installManagerHooks 抛异常: %@", e.reason);
+    }
+
+    LKLog(@"[login] install 全部完成");
 }
 
 @end
