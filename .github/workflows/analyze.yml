@@ -1,0 +1,64 @@
+name: Binary Analysis
+
+# 静态分析 appex 二进制，产出可读的反汇编与符号表。
+# 目的：定位 Swift 代码里的登录判断逻辑（「请先绑定账号」），
+# 避免在 Windows 上只能靠猜字段名/属性名。
+#
+# 产物提交到 analysis/out/，可直接在仓库里读取。
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: '要分析的目标（appex / main / both）'
+        required: false
+        default: 'appex'
+
+jobs:
+  analyze:
+    runs-on: macos-14
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: 环境确认
+        run: |
+          sw_vers
+          xcrun --find otool
+          xcrun --find swift-demangle
+          otool -v 2>&1 | head -3 || true
+
+      - name: 分析 appex
+        run: |
+          set -x
+          BIN=analysis/bin/SeekLoveKeyboard
+          OUT=analysis/out
+          mkdir -p "$OUT"
+          file "$BIN"
+          ls -la "$BIN"
+
+          # 1) 基本信息
+          otool -hv "$BIN"            > "$OUT/1-header.txt"            2>&1 || true
+          otool -l  "$BIN"            > "$OUT/2-loadcommands.txt"     2>&1 || true
+
+          # 2) 依赖与 rpath
+          otool -L "$BIN"             > "$OUT/3-dylibs.txt"           2>&1 || true
+          otool -l "$BIN" | grep -A2 LC_RPATH > "$OUT/4-rpath.txt"    2>&1 || true
+
+          echo "=== 分析完成 ==="
+          ls -la "$OUT"
+
+      - name: 提交分析结果
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f analysis/out
+          git commit -m "ci: binary analysis [skip ci]" || true
+          git pull --rebase origin main || true
+          git push || true
