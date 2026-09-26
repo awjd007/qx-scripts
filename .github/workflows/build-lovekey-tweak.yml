@@ -107,12 +107,19 @@ jobs:
           cp lovekey-tweak/LovekeyTweak.plist dist/lovekey-tweak/ 2>/dev/null || true
           ls -la dist/lovekey-tweak/ || true
 
+      - name: Rebuild APT repo index
+        if: always()
+        run: |
+          # 由 dist/ 里的 deb 重新生成扁平源索引，Sileo 可直接把本仓库添加为软件源
+          python3 scripts/make-repo.py || true
+          ls -la repo/ || true
+
       - name: Commit dist
         if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f dist/lovekey-tweak
+          git add -f dist/lovekey-tweak repo
           git commit -m "ci: publish lovekey-tweak builds [skip ci]" || true
           git pull --rebase origin main || true
           git push || true
