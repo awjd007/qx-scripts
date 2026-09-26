@@ -61,23 +61,34 @@ static NSMutableSet *gSeenHosts = nil;
         return;
     }
 
-    if ([path hasPrefix:@"/v1/chat/"]) {
-        // 关键：每次超会说请求都用全新访客账号（每号仅 3 次额度）
-        LKLog(@"[chat] 进入换账号流程 path=%@", path);
-        __weak typeof(self) weakSelf = self;
-        [LKAccount fetchGuestToken:^(NSString *token) {
-            __strong typeof(weakSelf) self = weakSelf;
-            if (!self) return;
-            if (token.length > 0) {
-                [req setValue:[@"Bearer " stringByAppendingString:token] forHTTPHeaderField:@"Authorization"];
-                LKLog(@"[chat] Authorization 已替换 token=%@@...", [token substringToIndex:MIN(12, token.length)]);
-            } else {
-                LKLog(@"[chat] !! token 获取失败，保留原 Authorization");
-            }
+    // 鉴权策略分两类：
+    //   1) /v1/chat/* —— 每次都用全新访客账号。实测每号仅 3 次赠送额度，
+    //      一次「超会说」会并发 5 个请求，复用同一账号必然触发 10001 次数用完。
+    //   2) 其它需鉴权接口（/v1/account、/v1/account/vip、/v1/app/config 等）——
+    //      复用缓存的 token。这些接口频繁轮询，若也每次新建账号会造成请求风暴，
+    //      且服务端会对新账号返回 code=1200「用户未登录或登录超时」，
+    //      客户端据此弹「请先打开 App」并把 VIP 判为非会员。
+    __weak typeof(self) weakSelf = self;
+    BOOL isChat = [path hasPrefix:@"/v1/chat/"];
+    void (^useToken)(NSString *) = ^(NSString *token) {
+        __strong typeof(weakSelf) self = weakSelf;
+        if (!self) return;
+        if (token.length > 0) {
+            [req setValue:[@"Bearer " stringByAppendingString:token] forHTTPHeaderField:@"Authorization"];
+            LKLog(@"[auth] %@ 已带 token=%@@...", path, [token substringToIndex:MIN(12, token.length)]);
+        } else {
+            LKLog(@"[auth] !! token 获取失败 %@", path);
+        }
+        if (isChat) {
             [self forwardStreaming:req];   // SSE 流式，不能缓冲
-        }];
+        } else {
+            [self forward:req];
+        }
+    };
+    if (isChat) {
+        [LKAccount fetchGuestToken:useToken];   // 每条 chat 请求换新账号
     } else {
-        [self forward:req];
+        [LKAccount ensureToken:useToken];       // 其它接口复用缓存 token
     }
 }
 
@@ -153,6 +164,20 @@ static NSMutableSet *gSeenHosts = nil;
                 return;
             }
             LKLog(@"[响应] status=%ld bytes=%lu path=%@", (long)code, (unsigned long)data.length, req.URL.path);
+
+            // token 失效（1200 未登录 / 401）时清缓存，下次请求自动重新注册访客
+            if (code == 401) {
+                [LKAccount invalidateToken];
+            } else if (data.length > 0 && data.length < 4096) {
+                id o = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+                if ([o isKindOfClass:[NSDictionary class]]) {
+                    id c = o[@"code"];
+                    if ([c respondsToSelector:@selector(integerValue)] && [c integerValue] == 1200) {
+                        [LKAccount invalidateToken];
+                    }
+                }
+            }
+
             NSData *patched = [self transformForURL:req.URL data:data];
             NSData *out = patched ?: data;
             LKLog(@"[响应] 改写=%@ (%lu -> %lu bytes)", patched ? @"已改写" : @"未改动",
@@ -180,6 +205,19 @@ static NSMutableSet *gSeenHosts = nil;
     }
     NSMutableDictionary *wrapped = obj;
     BOOL isV1 = [path hasPrefix:@"/v1/"];
+
+    // 服务端返回业务错误码（如 1200 未登录、10001 次数用完）时，
+    // data 往往是空字典 {}。此时不能注入会员字段 —— 会把 66 字节的
+    // 错误响应急剧撑大成伪造数据，客户端解析后走异常分支。
+    // 正确做法是原样放行，让客户端按既有逻辑处理（配合 token 修复后不会再出现）。
+    id codeObj = wrapped[@"code"];
+    NSInteger bizCode = [codeObj respondsToSelector:@selector(integerValue)] ? [codeObj integerValue] : 0;
+    if (bizCode != 0) {
+        LKLog(@"[改写] path=%@ 业务错误码=%ld (%@)，原样放行不注入",
+              path, (long)bizCode, wrapped[@"message"] ?: @"");
+        return nil;
+    }
+
     id d0 = wrapped[@"data"];
     LKLog(@"[改写] path=%@ isV1=%@ dataType=%@", path, isV1 ? @"Y" : @"N",
           [d0 isKindOfClass:[NSString class]] ? @"string(加密)" :
